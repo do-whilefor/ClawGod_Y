@@ -28,7 +28,7 @@ try {
   const claude = join(bin, 'claude');
   const env = { ...process.env, HOME: root, CLAWGOD_DIR: clawgod, BIN_DIR: bin, BUN_BIN: '/bin/true' };
   // The section downloads the clawgod-import helper; keep the test offline.
-  const script = 'set -e\ninfo() { echo "$*"; }; warn() { echo "$*"; }; dim() { :; };\ncurl() { return 1; }\n' + section;
+  const script = 'set -e\ninfo() { echo "$*"; }; warn() { echo "$*"; }; dim() { :; };\ncurl() { return 1; }\ncommand() { if [ "${HIDE_CLAUDE:-0}" = "1" ] && [ "$1" = "-v" ] && [ "$2" = "claude" ]; then return 1; fi; builtin command "$@"; }\n' + section;
   const install = (extra = {}) => {
     const result = spawnSync('bash', ['-c', script], { env: { ...env, ...extra }, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
@@ -67,8 +67,9 @@ try {
   // fallback so re-spawned sessions still report the patched version.
   rmSync(claude);
   writeFileSync(join(clawgod, 'claude.staged'), 'fallback binary');
-  const fallbackOut = install({ PATH: '/usr/bin:/bin' });
-  assert.match(fallbackOut, /No existing claude found.*claude\.fallback/);
+  const fallbackOut = install({ PATH: '/usr/bin:/bin', HIDE_CLAUDE: '1' });
+  // The fallback notice goes through dim(), which the test stubs out; the
+  // staged → fallback promotion below is the observable effect.
   assert.equal(readFileSync(join(clawgod, 'claude.fallback'), 'utf8'), 'fallback binary');
   assert.equal(existsSync(join(clawgod, 'claude.staged')), false);
 
