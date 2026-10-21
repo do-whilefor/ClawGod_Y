@@ -43,8 +43,9 @@ try {
   assert.equal(readFileSync(claude, 'utf8'), 'native binary');
   assert.equal(existsSync(claude + '.orig'), false, 'claude.orig must not be created');
   const launcher = readFileSync(join(bin, 'clawgod'), 'utf8');
-  assert.ok(launcher.includes('CLAUDE_CODE_EXECPATH="$CLAUDE_BIN"'), 'launcher must resolve execPath at launch time');
+  assert.ok(launcher.includes('CLAUDE_CODE_EXECPATH="$LAUNCH_CLAUDE"'), 'launcher must resolve execPath at launch time');
   assert.ok(launcher.includes('command -v claude'), 'launcher must resolve claude from PATH');
+  assert.ok(launcher.includes('claude.fallback'), 'launcher must reference the fallback binary');
   assert.equal(existsSync(join(clawgod, 'claude.staged')), false, 'staged binary must be discarded when claude exists');
 
   // Native installs where `claude` is a symlink into versions/ are followed
@@ -66,7 +67,7 @@ try {
   rmSync(claude);
   writeFileSync(join(clawgod, 'claude.staged'), 'fallback binary');
   const fallbackOut = install({ PATH: '/usr/bin:/bin' });
-  assert.match(fallbackOut, /No existing claude found/);
+  assert.match(fallbackOut, /No existing claude found.*claude\.fallback/);
   assert.equal(readFileSync(join(clawgod, 'claude.fallback'), 'utf8'), 'fallback binary');
   assert.equal(existsSync(join(clawgod, 'claude.staged')), false);
 

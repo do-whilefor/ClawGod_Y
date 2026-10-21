@@ -11648,7 +11648,16 @@ if [ ! -x \"\$BUN_BIN\" ]; then
   echo \"clawgod: install bun  curl -fsSL https://bun.sh/install | bash\" >&2
   exit 127
 fi
-export CLAUDE_CODE_EXECPATH=\"$CLAUDE_BIN\"
+# Resolve the real claude at launch time so a later-installed or upgraded
+# official client is picked up automatically; fall back to the binary this
+# install extracted when no claude exists on PATH.
+LAUNCH_CLAUDE=\"\$(command -v claude 2>/dev/null || true)\"
+if [ -z \"\$LAUNCH_CLAUDE\" ] && [ -f \"$CLAWGOD_DIR/claude.fallback\" ]; then
+  LAUNCH_CLAUDE=\"$CLAWGOD_DIR/claude.fallback\"
+fi
+if [ -n \"\$LAUNCH_CLAUDE\" ]; then
+  export CLAUDE_CODE_EXECPATH=\"\$LAUNCH_CLAUDE\"
+fi
 export HERDR_AGENT=\"\${HERDR_AGENT:-claude}\"
 exec \"\$BUN_BIN\" \"\$CLAWGOD_CLI\" \"\$@\""
 
@@ -11665,21 +11674,19 @@ write_launcher() {
   chmod +x "$target"
 }
 
-# Point CLAUDE_CODE_EXECPATH at the live `claude` on PATH at launch time.
-# Resolving it here (not at install time) means a user who installs or
-# upgrades the official client afterwards is picked up automatically.
-# `command -v` is a POSIX builtin; `|| true` keeps a clean miss from
-# tripping `set -e` under bash 5+.
-CLAUDE_BIN=$(command -v claude 2>/dev/null || true)
-if [ -z "$CLAUDE_BIN" ]; then
-  # No claude in PATH — fall back to the extracted native binary so
-  # execPath-based re-spawns still report the patched build's version.
-  CLAUDE_BIN="$CLAWGOD_DIR/claude.fallback"
-  if [ ! -f "$CLAUDE_BIN" ] && [ -f "$CLAWGOD_DIR/claude.staged" ]; then
-    mv -f "$CLAWGOD_DIR/claude.staged" "$CLAUDE_BIN"
-    chmod +x "$CLAUDE_BIN"
+# The launcher resolves CLAUDE_CODE_EXECPATH at launch time (live `claude`
+# on PATH, else ~/.clawgod/claude.fallback). At install time we only stage
+# the fallback binary for machines without any claude, and note the
+# situation.
+if ! command -v claude >/dev/null 2>&1; then
+  if [ ! -f "$CLAWGOD_DIR/claude.fallback" ] && [ -f "$CLAWGOD_DIR/claude.staged" ]; then
+    mv -f "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback"
+    chmod +x "$CLAWGOD_DIR/claude.fallback"
   fi
-  dim "No existing claude found — CLAUDE_CODE_EXECPATH will point at $CLAUDE_BIN"
+  dim "No existing claude found — launcher will fall back to $CLAWGOD_DIR/claude.fallback"
+else
+  # A real claude exists: the staged fallback must not shadow it.
+  rm -f "$CLAWGOD_DIR/claude.staged"
 fi
 
 # Remove any backup artifacts from earlier installer versions — they are no

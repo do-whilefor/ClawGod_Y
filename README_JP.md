@@ -2,7 +2,7 @@
 
 # ClawGod_Y
 
-> [Claude Code](https://docs.anthropic.com/en/docs/claude-code) ゴッドモード。
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) ゴッドモード。
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.3.14%2B-000000?logo=bun&logoColor=white)](https://bun.sh/)
