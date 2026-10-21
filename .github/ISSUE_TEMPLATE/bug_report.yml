@@ -1,0 +1,36 @@
+name: Bug Report
+description: Report a problem with ClawGod
+labels: ["bug"]
+body:
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "e.g. macOS 15.3 / Ubuntu 24.04 / Windows 11"
+    validations:
+      required: true
+
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code Version
+      placeholder: "e.g. 2.1.90 (run: claude --version)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened? Paste error log
+      description: Paste error messages if any.Paste error log
+      render: shell
+    validations:
+      required: true
+      
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot (optional)
+      description: Drag and drop if helpful.
+    validations:
+      required: true
