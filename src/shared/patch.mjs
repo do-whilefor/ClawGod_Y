@@ -1155,7 +1155,8 @@ if (!dryRun && !verify && applied > 0) {
   try {
     const pruned = pruneRuntimeGraph(files, originalFiles);
     for (const [name, content] of Object.entries(pruned)) {
-      if (content !== files[name]) parsePatchSource(content);
+      // Only JavaScript chunks are parseable; other assets pass through.
+      if (content !== files[name] && /\.(c?js|mjs)$/i.test(name)) parsePatchSource(content);
     }
     const removedCount = Object.keys(files).length - Object.keys(pruned).length;
     if (removedCount > 0) {

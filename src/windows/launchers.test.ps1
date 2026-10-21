@@ -1,7 +1,10 @@
-# Exercise the actual installer section with real Windows files and locks.
+# Exercise the actual installer launcher section with real Windows files.
+# This fork never replaces `claude`: the installer only writes clawgod.cmd,
+# points CLAUDE_CODE_EXECPATH at the real claude.exe, and sweeps artifacts
+# left by installer versions that did replace claude.
 $ErrorActionPreference = 'Stop'
 $template = Get-Content (Join-Path $PSScriptRoot '..\templates\install.ps1') -Raw
-$section = [regex]::Match($template, '(?s)# Find and back up original claude.*?(?=# --- Ensure BinDir is in PATH)').Value
+$section = [regex]::Match($template, '(?s)# --- Install the clawgod launcher.*?(?=# --- Ensure BinDir is in PATH)').Value
 if (-not $section) { throw 'Installer launcher section not found' }
 $install = [ScriptBlock]::Create($section)
 $root = Join-Path ([IO.Path]::GetTempPath()) ('clawgod-launchers-' + [Guid]::NewGuid().ToString('N'))
@@ -22,115 +25,83 @@ try {
     New-Item -ItemType Directory -Force $BinDir | Out-Null
     $ClawDir = Join-Path $root '.clawgod'
     New-Item -ItemType Directory -Force $ClawDir | Out-Null
-    $staged = Join-Path $ClawDir 'claude.staged.exe'
     $env:PATH = "$BinDir;$savedPath"
-    $exe = Join-Path $BinDir 'claude.exe'
-    $backup = Join-Path $BinDir 'claude.orig.exe'
-    $cmd = Join-Path $BinDir 'claude.cmd'
-    $launcherContent = '@echo clawgod-launcher-marker & rem %USERPROFILE%\.clawgod\cli.cjs'
+    $BunBin = $node
+    # The launcher section embeds an Invoke-WebRequest download for the
+    # optional clawgod-import tool; stub it out so the test stays offline.
+    function Invoke-WebRequest { throw 'offline' }
 
+    $exe = Join-Path $BinDir 'claude.exe'
+    $cmd = Join-Path $BinDir 'claude.cmd'
+    $clawgod = Join-Path $BinDir 'clawgod.cmd'
+
+    # Fresh install with a real claude.exe on PATH: it must be discovered for
+    # CLAUDE_CODE_EXECPATH and otherwise left byte-identical.
     Copy-Item $node $exe
     $originalHash = (Get-FileHash $exe).Hash
     & $install
-    Assert (-not (Test-Path $exe)) 'Fresh install left a competing exe'
-    Assert ((Get-FileHash $backup).Hash -eq $originalHash) 'Native backup differs'
+    Assert (Test-Path $clawgod) 'clawgod.cmd was not written'
+    Assert ((Get-FileHash $exe).Hash -eq $originalHash) 'claude.exe was modified'
+    Assert (-not (Test-Path $cmd)) 'claude.cmd must not be created'
+    Assert (-not (Test-Path (Join-Path $BinDir 'claude.orig.exe'))) 'claude.orig.exe must not be created'
+    $written = Get-Content $clawgod -Raw
+    Assert ($written -match 'CLAUDE_CODE_EXECPATH=%USERPROFILE%\\\.local\\bin\\claude\.exe') "execPath was not pointed at the discovered claude.exe: $written"
+    Assert ($script:messages -match "'claude' untouched") 'Untouched notice missing'
 
-    # Repeated installs and repeated upstream repairs preserve the first backup.
-    foreach ($attempt in 1..3) {
-        & $install
-        Assert (-not (Test-Path (Join-Path $BinDir 'claude.orig.cmd'))) 'Backed up our own launcher'
-        Copy-Item $node $exe
-        & $install
-        Assert (-not (Test-Path $exe)) 'Reinstall left the repaired exe'
-        Assert ((Get-FileHash $backup).Hash -eq $originalHash) 'Reinstall changed native backup'
-        Assert ((Get-Command claude).Source -eq $cmd) 'PowerShell does not resolve claude.cmd'
-        Assert ((& cmd.exe /d /c 'claude --version') -match 'clawgod-launcher-marker') 'cmd.exe bypassed launcher'
-    }
-
-    # An upgrade stages the binary it extracted from. The backup must follow
-    # it, otherwise sessions spawned from execPath stay on the old version.
-    # One trailing byte is enough to tell the "new" binary from the old one.
-    function New-StagedNative {
-        Copy-Item $node $staged -Force
-        $stream = [IO.File]::Open($staged, [IO.FileMode]::Append)
-        try { $stream.WriteByte(0) } finally { $stream.Dispose() }
-        (Get-FileHash $staged).Hash
-    }
-    $upgradedHash = New-StagedNative
-    Assert ($upgradedHash -ne $originalHash) 'Staged fixture does not differ from the backup'
-    $script:messages.Clear()
-    & $install
-    Assert ((Get-FileHash $backup).Hash -eq $upgradedHash) 'Upgrade left the old native backup'
-    Assert (-not (Test-Path $staged)) 'Staged native binary was not consumed'
-    Assert ($script:messages -match 'Native binary refreshed') 'Refresh was not reported'
-
-    # The daemon usually still runs the old backup during `claude update`.
-    Copy-Item $node $backup -Force
-    $upgradedHash = New-StagedNative
-    $running = Start-Process $backup -ArgumentList '-e', 'setInterval(()=>{},1000)' -PassThru -WindowStyle Hidden
+    # execPath discovery prefers an existing claude.exe anywhere on PATH.
+    $elsewhere = Join-Path $root 'elsewhere'
+    New-Item -ItemType Directory -Force $elsewhere | Out-Null
+    Copy-Item $node (Join-Path $elsewhere 'claude.exe')
+    $env:PATH = "$elsewhere;$BinDir;$savedPath"
     try {
-        Start-Sleep -Milliseconds 300
-        Assert (-not $running.HasExited) 'Running backup fixture did not start'
-        $script:messages.Clear()
         & $install
-        Assert ((Get-FileHash $backup).Hash -eq $upgradedHash) 'Running backup blocked the refresh'
-        Assert (-not $running.HasExited) 'Refresh killed the running session'
-        Assert ($script:messages -match 'until restarted') 'In-use backup was not mentioned'
+        $written = Get-Content $clawgod -Raw
+        Assert ($written -match 'CLAUDE_CODE_EXECPATH=%USERPROFILE%\\elsewhere\\claude\.exe') "execPath did not follow PATH claude.exe: $written"
     } finally {
-        if (-not $running.HasExited) { Stop-Process -Id $running.Id -Force; $running.WaitForExit() }
-        $running.Dispose()
-    }
-    # The renamed-aside copy is swept once nothing holds it, and a run with
-    # nothing staged (-NoUpgrade) leaves the refreshed backup alone.
-    & $install
-    Assert (@(Get-ChildItem $BinDir -Filter 'claude.*.exe' | Where-Object Name -ne 'claude.orig.exe').Count -eq 0) 'Old backup was not swept'
-    Assert ((Get-FileHash $backup).Hash -eq $upgradedHash) 'Install without a staged binary changed the backup'
-    Copy-Item $node $backup -Force
-
-    # A running Windows executable rejects deletion but normally allows rename.
-    Copy-Item $node $exe
-    $running = Start-Process $exe -ArgumentList '-e', 'setInterval(()=>{},1000)' -PassThru -WindowStyle Hidden
-    try {
-        Start-Sleep -Milliseconds 300
-        Assert (-not $running.HasExited) 'Executable lock fixture did not start'
-        & $install
-        Assert (-not (Test-Path $exe)) 'Running exe was not renamed aside'
-        Assert (@(Get-ChildItem $BinDir -Filter 'claude.*.exe' | Where-Object Name -ne 'claude.orig.exe').Count -gt 0) 'Rename fallback was not exercised'
-    } finally {
-        if (-not $running.HasExited) { Stop-Process -Id $running.Id -Force; $running.WaitForExit() }
-        $running.Dispose()
+        $env:PATH = "$BinDir;$savedPath"
     }
 
-    # A lock without delete sharing prevents both removal and rename. Never
-    # report success, and still leave the explicit recovery launcher usable.
-    Copy-Item $node $exe
-    $lock = [IO.File]::Open($exe, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-    try {
-        $script:messages.Clear()
-        $failure = $null
-        try { & $install } catch { $failure = $_.Exception.Message }
-        Assert ($failure -like '*Cannot remove or rename*') 'Locked exe did not report actionable failure'
-        Assert (-not ($script:messages -match "Commands 'claude'")) 'Locked install reported success'
-        Assert (Test-Path $exe) 'Lock fixture did not retain the executable'
-        Assert ((& cmd.exe /d /c 'clawgod --version') -match 'clawgod-launcher-marker') 'Recovery alias is unavailable'
-    } finally { $lock.Dispose() }
-    & $install
-    Assert (-not (Test-Path $exe)) 'Retry after releasing lock did not recover'
-
-    # Our existing cmd must not stop discovery of a retained native version.
-    Remove-Item $backup
+    # Without any claude.exe, the versions/ directory is the fallback.
+    Remove-Item $exe
     $versions = Join-Path $root '.local\share\claude\versions'
     New-Item -ItemType Directory -Force $versions | Out-Null
-    Copy-Item $node (Join-Path $versions 'test-version')
+    Copy-Item $node (Join-Path $versions 'claude-2.1.285.exe')
     & $install
-    Assert ((Get-FileHash $backup).Hash -eq $originalHash) 'Own launcher prevented native backup discovery'
-    Assert (-not (Test-Path (Join-Path $BinDir 'claude.orig.cmd'))) 'Own launcher became original backup'
+    $written = Get-Content $clawgod -Raw
+    Assert ($written -match 'claude-2\.1\.285\.exe') "versions/ fallback was not used: $written"
 
-    # A genuine preexisting cmd remains eligible for backup.
+    # No claude anywhere: execPath falls back to the default location and the
+    # install still succeeds with a notice.
+    Remove-Item -Recurse -Force $versions
+    $script:messages.Clear()
+    & $install
+    Assert ($script:messages -match 'No existing claude\.exe found') 'Missing-claude notice missing'
+
+    # Leftovers from installer versions that replaced claude are swept:
+    # our own old claude.cmd launcher, claude.orig.*, claude.<guid>.exe and
+    # the staged binary. A user's genuine claude.cmd is preserved.
+    Copy-Item $node $exe
+    Set-Content $cmd "@echo off`r`nrem $root\.clawgod\cli.cjs" -Encoding Ascii
+    Set-Content (Join-Path $BinDir 'claude.orig.cmd') '@echo old' -Encoding Ascii
+    Copy-Item $node (Join-Path $BinDir 'claude.orig.exe')
+    Copy-Item $node (Join-Path $BinDir 'claude.abcdef.exe')
+    Set-Content (Join-Path $ClawDir 'claude.staged.exe') 'staged'
+    & $install
+    Assert (-not (Test-Path $cmd)) 'Old clawgod claude.cmd launcher was not swept'
+    Assert (-not (Test-Path (Join-Path $BinDir 'claude.orig.cmd'))) 'claude.orig.cmd was not swept'
+    Assert (-not (Test-Path (Join-Path $BinDir 'claude.orig.exe'))) 'claude.orig.exe was not swept'
+    Assert (-not (Test-Path (Join-Path $BinDir 'claude.abcdef.exe'))) 'Timestamped exe was not swept'
+    Assert (-not (Test-Path (Join-Path $ClawDir 'claude.staged.exe'))) 'Staged binary was not swept'
+    Assert ((Get-FileHash $exe).Hash -eq $originalHash) 'claude.exe was modified during sweep'
+
     Set-Content $cmd '@echo original-launcher' -Encoding Ascii
     & $install
-    Assert ((Get-Content (Join-Path $BinDir 'claude.orig.cmd') -Raw) -match 'original-launcher') 'Original cmd was not preserved'
-    Write-Host '[launchers.test] repeated installs, native repair, upgrade refresh, running/locked exe, and backup preservation passed'
+    Assert ((Get-Content $cmd -Raw) -match 'original-launcher') 'A genuine user claude.cmd was removed'
+
+    # The launcher runs through cmd.exe and resolves %USERPROFILE% itself.
+    Assert ((& cmd.exe /d /c 'clawgod import 2>&1') -match 'import tool not installed|cli\.cjs not found') 'clawgod.cmd is not executable via cmd.exe'
+
+    Write-Host '[launchers.test] clawgod-only launcher, execPath discovery, and legacy-artifact sweep passed'
 } finally {
     $env:USERPROFILE = $savedHome
     $env:LOCALAPPDATA = $savedLocal

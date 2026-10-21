@@ -6,13 +6,15 @@ import { spawnSync } from 'node:child_process';
 import { runInNewContext } from 'node:vm';
 
 const root = mkdtempSync(join(tmpdir(), 'clawgod-source-backup-'));
-const command = '.command("update").alias("upgrade").description("Update").action(s(async(A)=>{original()}))';
+// The graph chunks must be parseable JS: the pentest prune pass parses every
+// chunk it keeps, so the fixture cannot start with a bare `.command(...)`.
+const command = 'const cmd=program.command("update").alias("upgrade").description("Update").action(s(async(A)=>{original()}));';
 const colors = 'const color="rgb(215,119,87)";';
 try {
   for (const graph of [false, true]) {
     const dir = join(root, graph ? 'graph' : 'legacy');
     mkdirSync(dir);
-    for (const name of ['patch.mjs', 'ast-patches.mjs', 'acorn.mjs']) {
+    for (const name of ['patch.mjs', 'ast-patches.mjs', 'acorn.mjs', 'pentest-patches.mjs']) {
       copyFileSync(new URL(`./${name}`, import.meta.url), join(dir, name));
     }
     const entry = join(dir, 'cli.original.cjs');
@@ -40,24 +42,22 @@ try {
     const backup = readFileSync(snapshot, 'utf8');
     const first = succeeds();
     const patched = readFileSync(target, 'utf8');
-    assert.match(patched, /clawgod self-update/);
+    assert.match(patched, /Updating ClawGod_Y/);
     for (const platform of ['linux', 'win32']) {
+      // The fork redirect exits with code 2 when any update argument is
+      // passed, pointing the user at the interactive installer.
       const stop = new Error('update redirected');
-      const env = {};
-      const body = patched.replace(/^\/\/ Version:[^\n]*\n/, '').split('const color=')[0];
+      const body = patched.replace(/^\/\/ Version:[^\n]*\n/, '').split('const color=')[0].replace(/^const cmd=program/, '');
       const redirect = runInNewContext(`const cmd={command(){return this},alias(){return this},description(){return this},allowUnknownOption(){return this},action(fn){this.run=fn;return this}};cmd${body};cmd.run()`, {
-        process: { argv: ['bun', 'cli', 'update', '--tolerate-stale'], env, platform, stderr: { write() {} }, exit() { throw stop; } },
+        process: { argv: ['bun', 'cli', 'update', '--tolerate-stale'], env: {}, platform, stderr: { write() {} },
+          exit(code) { assert.equal(code, 2, 'update with arguments must exit 2'); throw stop; } },
         require(name) {
           assert.equal(name, 'child_process');
-          return { spawnSync(_command, _args, options) {
-            assert.equal(options.env.CLAWGOD_TOLERATE_STALE, '1');
-            return { status: 0 };
-          } };
+          return { spawnSync() { return { status: 0 }; } };
         },
         s: fn => fn,
       });
       await assert.rejects(redirect, error => error === stop);
-      assert.equal(env.CLAWGOD_TOLERATE_STALE, '1');
     }
     assert.notEqual(patched, clean);
     for (let attempt = 0; attempt < 3; attempt++) {

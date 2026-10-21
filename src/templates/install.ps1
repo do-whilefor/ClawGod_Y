@@ -65,7 +65,7 @@ if ($Uninstall) {
         if (Test-Path $p) { Remove-Item -Force $p }
     }
 
-    foreach ($f in @("cli.js","cli.cjs","cli.original.js","cli.original.cjs","cli.original.js.bak","cli.original.cjs.bak","source-backup.json","patch.js","patch.mjs","ast-patches.mjs","acorn.mjs","acorn.LICENSE","extract-natives.mjs","post-process.mjs","repatch.mjs","startup-check.cjs","startup-check.log","openai-proxy.cjs","feature-gates.cjs","runtime-helpers.cjs","bun-ant-shim.cjs","clawgod-import.exe","claude.staged.exe",".source-version","node_modules","bun-runtime","vendor","bunfs","pathmap.json")) {
+    foreach ($f in @("cli.js","cli.cjs","cli.original.js","cli.original.cjs","cli.original.js.bak","cli.original.cjs.bak","source-backup.json","patch.js","patch.mjs","ast-patches.mjs","acorn.mjs","acorn.LICENSE","extract-natives.mjs","post-process.mjs","repatch.mjs","startup-check.cjs","startup-check.log","openai-proxy.cjs","feature-gates.cjs","runtime-helpers.cjs","bun-ant-shim.cjs","clawgod-import.exe","claude.staged.exe","claude.fallback.exe",".source-version","node_modules","bun-runtime","vendor","bunfs","pathmap.json")) {
         $p = Join-Path $ClawDir $f
         if (Test-Path $p) { Remove-Item -Recurse -Force $p }
     }
@@ -454,9 +454,11 @@ Set-Content -Path (Join-Path $ClawDir ".source-version") -Value $NativeBinLabel 
 
 # cli.cjs points process.execPath at the live `claude` binary via the
 # launcher's CLAUDE_CODE_EXECPATH, so re-spawned sessions run the user's
-# real Claude Code. The extracted npm binary is no longer kept.
+# real Claude Code. The extracted npm binary is staged only as a fallback
+# for machines without any claude.exe on PATH; the launcher section below
+# consumes the staging file when it needs it.
 if ($NativeBin -and (Test-Path $NativeBin)) {
-    Remove-Item -Force $NativeBin -ErrorAction SilentlyContinue
+    Move-Item -Force $NativeBin (Join-Path $ClawDir "claude.staged.exe")
 }
 
 # If we pulled the binary from npm into a tmpdir, clean up -- extraction
@@ -468,11 +470,6 @@ if ($NativeBinTmpDir -and (Test-Path $NativeBinTmpDir)) {
 Write-OK "cli.original.cjs ready ($NativeBinLabel)"
 
 }  # end -NoUpgrade skip
-
-# A failed earlier upgrade may have left a newer native binary staged.
-if ($NoUpgrade) {
-    Remove-Item -LiteralPath (Join-Path $ClawDir "claude.staged.exe") -Force -ErrorAction SilentlyContinue
-}
 
 # --- Write re-patch helper (used by wrapper on version drift) ---------
 
@@ -730,6 +727,24 @@ if ($RollbackDir) { Remove-Item -LiteralPath $RollbackDir -Recurse -Force -Error
 
 # --- Install the clawgod launcher (claude stays untouched) ------------
 
+# Build launcher content using %USERPROFILE% env var where possible to avoid
+# encoding issues when the profile path contains non-ASCII characters (e.g.
+# Chinese/Korean/Japanese usernames). cmd.exe resolves %USERPROFILE% at
+# runtime so no problematic characters need to be baked into the .cmd file.
+$cliPathInCmd = "%USERPROFILE%\.clawgod\cli.cjs"
+$normalizedUserProfile = $env:USERPROFILE.TrimEnd('\', '/')
+$normalizedBunBin = $BunBin.TrimEnd('\', '/')
+$userProfilePrefix = "$normalizedUserProfile\"
+if ($normalizedBunBin.Equals($normalizedUserProfile, [StringComparison]::OrdinalIgnoreCase) -or
+    $normalizedBunBin.StartsWith($userProfilePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    $bunRelative = $normalizedBunBin.Substring($normalizedUserProfile.Length).TrimStart('\', '/')
+    $bunPathInCmd = "%USERPROFILE%\$bunRelative"
+} else {
+    # Bun outside USERPROFILE (e.g. system-wide install) -- fall back to
+    # absolute path since %USERPROFILE%-relative expansion doesn't apply.
+    $bunPathInCmd = $BunBin
+}
+
 # Locate the real claude.exe ONLY to point CLAUDE_CODE_EXECPATH at it.
 # `claude` itself is never replaced, renamed or backed up -- the patched CLI
 # lives exclusively behind the `clawgod` command.
@@ -750,11 +765,16 @@ if ($foundClaude) {
     }
 }
 if (-not $claudeExeForPath) {
-    $claudeExeForPath = Join-Path $BinDir "claude.exe"
+    # No claude.exe anywhere -- fall back to the binary staged by this run,
+    # so execPath-based re-spawns still report the patched build's version.
+    $claudeExeForPath = Join-Path $ClawDir "claude.fallback.exe"
+    $stagedFallback = Join-Path $ClawDir "claude.staged.exe"
+    if (-not (Test-Path $claudeExeForPath) -and (Test-Path $stagedFallback)) {
+        Move-Item -Force $stagedFallback $claudeExeForPath
+        Write-OK "Staged binary installed as execPath fallback (claude.fallback.exe)"
+    }
     Write-Dim "No existing claude.exe found -- CLAUDE_CODE_EXECPATH will point at $claudeExeForPath"
 }
-# cmd.exe resolves %USERPROFILE% at runtime, avoiding encoding issues with
-# non-ASCII profile paths.
 $normalizedClaudeExe = $claudeExeForPath.TrimEnd('\', '/')
 if ($normalizedClaudeExe.StartsWith($userProfilePrefix, [StringComparison]::OrdinalIgnoreCase)) {
     $claudeExeInCmd = "%USERPROFILE%\" + $normalizedClaudeExe.Substring($normalizedUserProfile.Length).TrimStart('\', '/')
@@ -762,23 +782,6 @@ if ($normalizedClaudeExe.StartsWith($userProfilePrefix, [StringComparison]::Ordi
     $claudeExeInCmd = $claudeExeForPath
 }
 
-# Build launcher content using %USERPROFILE% env var where possible to avoid
-# encoding issues when the profile path contains non-ASCII characters (e.g.
-# Chinese/Korean/Japanese usernames). cmd.exe resolves %USERPROFILE% at
-# runtime so no problematic characters need to be baked into the .cmd file.
-$cliPathInCmd = "%USERPROFILE%\.clawgod\cli.cjs"
-$normalizedUserProfile = $env:USERPROFILE.TrimEnd('\', '/')
-$normalizedBunBin = $BunBin.TrimEnd('\', '/')
-$userProfilePrefix = "$normalizedUserProfile\"
-if ($normalizedBunBin.Equals($normalizedUserProfile, [StringComparison]::OrdinalIgnoreCase) -or
-    $normalizedBunBin.StartsWith($userProfilePrefix, [StringComparison]::OrdinalIgnoreCase)) {
-    $bunRelative = $normalizedBunBin.Substring($normalizedUserProfile.Length).TrimStart('\', '/')
-    $bunPathInCmd = "%USERPROFILE%\$bunRelative"
-} else {
-    # Bun outside USERPROFILE (e.g. system-wide install) -- fall back to
-    # absolute path since %USERPROFILE%-relative expansion doesn't apply.
-    $bunPathInCmd = $BunBin
-}
 # Download clawgod-import binary
 $importBin = Join-Path $ClawDir "clawgod-import.exe"
 if (-not (Test-Path $importBin)) {
@@ -803,13 +806,20 @@ Write-OK "Command 'clawgod' -> patched; 'claude' untouched"
 foreach ($leftover in @("claude.orig.cmd", "claude.orig.exe", "claude.cmd")) {
     $p = Join-Path $BinDir $leftover
     if ((Test-Path $p) -and ($leftover -ne "claude.cmd" -or
-        (Select-String -LiteralPath $p -Pattern '\.clawgod[\/]cli\.(?:cjs|js)' -Quiet -ErrorAction SilentlyContinue))) {
+        (Select-String -LiteralPath $p -Pattern '\.clawgod[\\/]cli\.(?:cjs|js)' -Quiet -ErrorAction SilentlyContinue))) {
         Remove-Item -Force $p -ErrorAction SilentlyContinue
     }
 }
 Get-ChildItem $BinDir -Filter "claude.*.exe" -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
 Remove-Item -Force (Join-Path $ClawDir "claude.staged.exe") -ErrorAction SilentlyContinue
+
+# A fallback binary from an earlier no-claude install must not shadow the
+# real thing: once a claude.exe exists, the launcher resolves it instead.
+if ((Get-Command claude.exe -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $ClawDir "claude.fallback.exe"))) {
+    Remove-Item -Force (Join-Path $ClawDir "claude.fallback.exe") -ErrorAction SilentlyContinue
+    Write-Dim "Removed execPath fallback; a real claude.exe is available"
+}
 
 # --- Ensure BinDir is in PATH -----------------------------------------
 

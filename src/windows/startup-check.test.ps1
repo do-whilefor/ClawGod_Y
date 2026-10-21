@@ -2,7 +2,7 @@
 # native stderr/ErrorActionPreference behavior and abort-before-launcher path.
 $ErrorActionPreference = 'Stop'
 $template = Get-Content (Join-Path $PSScriptRoot '..\templates\install.ps1') -Raw
-$section = [regex]::Match($template, '(?s)Write-Dim "Verifying Bun.*?(?=# --- Replace claude command)').Value
+$section = [regex]::Match($template, '(?s)Write-Dim "Verifying Bun.*?(?=# --- Install the clawgod launcher)').Value
 if (-not $section) { throw 'Startup verification section not found' }
 $root = Join-Path ([IO.Path]::GetTempPath()) ('clawgod startup-' + [Guid]::NewGuid().ToString('N'))
 $scriptPath = Join-Path $root 'check.ps1'

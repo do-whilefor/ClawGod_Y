@@ -68,7 +68,7 @@ const ultraplanFixtures = [
 ];
 const testDir = mkdtempSync(join(tmpdir(), 'clawgod-patch-test-'));
 try {
-  for (const name of ['patch.mjs', 'ast-patches.mjs', 'acorn.mjs']) {
+  for (const name of ['patch.mjs', 'ast-patches.mjs', 'acorn.mjs', 'pentest-patches.mjs']) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(testDir, name));
   }
   for (const graph of [false, true]) {
@@ -202,7 +202,7 @@ function privacyFixture(version, flag, check) {
     'async function buildRequest(){return{headers:{"x-unrelated":"preserved",...header(await collect())},body:{messages:[{role:"user",content:"hello"}]}}}';
 }
 try {
-  for (const name of ['patch.mjs', 'ast-patches.mjs', 'acorn.mjs']) {
+  for (const name of ['patch.mjs', 'ast-patches.mjs', 'acorn.mjs', 'pentest-patches.mjs']) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(privacyDir, name));
   }
   let lastPatched;

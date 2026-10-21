@@ -339,15 +339,16 @@ jobs:
           fi
           echo "Lean toggle verified"
 
-      - name: Smoke test — claude --version
+      - name: Smoke test — clawgod --version
         timeout-minutes: 1
         # Exercises the wrapper path:
         #   launcher → bun cli.cjs → require('./cli.original.cjs')
         # The Bun CJS-wrapper panic surfaces here, not at install time.
+        # This fork never replaces `claude`; the patched entry is `clawgod`.
         shell: bash
         run: |
           set +e
-          out=$(claude --version 2>&1)
+          out=$(clawgod --version 2>&1)
           rc=$?
           set -e
           echo "$out"
@@ -355,7 +356,7 @@ jobs:
             echo "::error::Bun CJS-wrapper panic — local Bun lags the embedded Bun"
             exit 1
           fi
-          [[ $rc -eq 0 ]] || { echo "::error::claude --version exited $rc"; exit 1; }
+          [[ $rc -eq 0 ]] || { echo "::error::clawgod --version exited $rc"; exit 1; }
           if echo "$out" | grep -qi 'proxy on port'; then
             echo '::error::version query started a provider listener'
             exit 1
@@ -368,9 +369,14 @@ jobs:
         shell: bash
         run: |
           # The launcher sets CLAUDE_CODE_EXECPATH before running bun cli.cjs.
-          # Simulate the same env so cli.cjs monkey-patches take effect.
-          exec_path="$HOME/.local/bin/claude.orig"
+          # This fork resolves it at launch time: the real `claude` on PATH
+          # when present, otherwise the staged fallback binary under
+          # ~/.clawgod. A fresh CI runner has no claude, so the fallback is
+          # what multitool dispatch must use.
+          exec_path="$HOME/.clawgod/claude.fallback"
+          [[ -f "$exec_path" ]] || { echo "::error::execPath fallback binary missing ($exec_path)"; exit 1; }
           export CLAUDE_CODE_EXECPATH="$exec_path"
+          echo "execPath: $exec_path"
 
           echo "── Checking fv() patched (Bun.isStandaloneExecutable → true) ──"
           # The patcher replaces fv(){return Bun.isStandaloneExecutable===!0}

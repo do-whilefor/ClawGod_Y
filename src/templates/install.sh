@@ -64,7 +64,7 @@ if [ "$UNINSTALL" = "1" ]; then
       info "Removed ClawGod launcher ($DIR/clawgod)"
     fi
   done
-  rm -rf "$CLAWGOD_DIR/node_modules" "$CLAWGOD_DIR/vendor" "$CLAWGOD_DIR/bun-runtime" "$CLAWGOD_DIR/cli.original.js" "$CLAWGOD_DIR/cli.original.js.bak" "$CLAWGOD_DIR/cli.original.cjs" "$CLAWGOD_DIR/cli.original.cjs.bak" "$CLAWGOD_DIR/source-backup.json" "$CLAWGOD_DIR/cli.js" "$CLAWGOD_DIR/cli.cjs" "$CLAWGOD_DIR/patch.mjs" "$CLAWGOD_DIR/ast-patches.mjs" "$CLAWGOD_DIR/acorn.mjs" "$CLAWGOD_DIR/acorn.LICENSE" "$CLAWGOD_DIR/patch.js" "$CLAWGOD_DIR/extract-natives.mjs" "$CLAWGOD_DIR/post-process.mjs" "$CLAWGOD_DIR/repatch.mjs" "$CLAWGOD_DIR/startup-check.cjs" "$CLAWGOD_DIR/startup-check.log" "$CLAWGOD_DIR/openai-proxy.cjs" "$CLAWGOD_DIR/feature-gates.cjs" "$CLAWGOD_DIR/runtime-helpers.cjs" "$CLAWGOD_DIR/bun-ant-shim.cjs" "$CLAWGOD_DIR/clawgod-import" "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/.source-version"
+  rm -rf "$CLAWGOD_DIR/node_modules" "$CLAWGOD_DIR/vendor" "$CLAWGOD_DIR/bun-runtime" "$CLAWGOD_DIR/cli.original.js" "$CLAWGOD_DIR/cli.original.js.bak" "$CLAWGOD_DIR/cli.original.cjs" "$CLAWGOD_DIR/cli.original.cjs.bak" "$CLAWGOD_DIR/source-backup.json" "$CLAWGOD_DIR/cli.js" "$CLAWGOD_DIR/cli.cjs" "$CLAWGOD_DIR/patch.mjs" "$CLAWGOD_DIR/ast-patches.mjs" "$CLAWGOD_DIR/acorn.mjs" "$CLAWGOD_DIR/acorn.LICENSE" "$CLAWGOD_DIR/patch.js" "$CLAWGOD_DIR/extract-natives.mjs" "$CLAWGOD_DIR/post-process.mjs" "$CLAWGOD_DIR/repatch.mjs" "$CLAWGOD_DIR/startup-check.cjs" "$CLAWGOD_DIR/startup-check.log" "$CLAWGOD_DIR/openai-proxy.cjs" "$CLAWGOD_DIR/feature-gates.cjs" "$CLAWGOD_DIR/runtime-helpers.cjs" "$CLAWGOD_DIR/bun-ant-shim.cjs" "$CLAWGOD_DIR/clawgod-import" "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback" "$CLAWGOD_DIR/.source-version"
   hash -r 2>/dev/null
   info "ClawGod uninstalled"
   echo ""
@@ -365,9 +365,11 @@ echo "$NATIVE_BIN_LABEL" > "$CLAWGOD_DIR/.source-version"
 
 # cli.cjs points process.execPath at the live `claude` binary (see the
 # launcher's CLAUDE_CODE_EXECPATH), so re-spawned sessions run the user's
-# real Claude Code. The extracted npm binary is no longer kept.
+# real Claude Code. The extracted npm binary is staged only as a fallback
+# for machines without any claude on PATH; the launcher section below
+# consumes the staging file when it needs it.
 if [ -f "$NATIVE_BIN" ]; then
-  rm -f "$NATIVE_BIN"
+  mv -f "$NATIVE_BIN" "$CLAWGOD_DIR/claude.staged"
 fi
 
 # If we pulled the binary from npm into a tmpdir, clean it up now —
@@ -623,16 +625,6 @@ if [ "$NO_UPGRADE" != "1" ]; then rollback_install; fi
 
 # ─── Install the clawgod launcher (claude stays untouched) ───────────
 
-# Detect where claude is installed ONLY to point CLAUDE_CODE_EXECPATH at a
-# real binary. `claude` itself is never replaced, renamed or backed up —
-# the patched CLI lives exclusively behind the `clawgod` command.
-CLAUDE_BIN=$(command -v claude 2>/dev/null || true)
-if [ -z "$CLAUDE_BIN" ]; then
-  CLAUDE_BIN="$BIN_DIR/claude"
-  dim "No existing claude found — CLAUDE_CODE_EXECPATH will point at $CLAUDE_BIN"
-fi
-CLAUDE_DIR=$(dirname "$CLAUDE_BIN")
-
 # ─── Download clawgod-import binary ─────────────────────
 IMPORT_BIN="$CLAWGOD_DIR/clawgod-import"
 if [ ! -x "$IMPORT_BIN" ]; then
@@ -692,8 +684,8 @@ export HERDR_AGENT=\"\${HERDR_AGENT:-claude}\"
 exec \"\$BUN_BIN\" \"\$CLAWGOD_CLI\" \"\$@\""
 
 
-# Write the launcher to a fresh regular file. Never touch $CLAUDE_BIN:
-# this fork leaves the original `claude` command unpatched by design.
+# Write the launcher to a fresh regular file. Never touch `claude`:
+# this fork leaves the original command unpatched by design.
 write_launcher() {
   local target="$1"
   local dir
@@ -704,9 +696,26 @@ write_launcher() {
   chmod +x "$target"
 }
 
-# Remove any staged/backup artifacts from earlier installer versions —
-# they are no longer produced or consumed.
-rm -f "$CLAUDE_BIN.orig" "$BIN_DIR/claude.orig" "$CLAWGOD_DIR/claude.staged"
+# Point CLAUDE_CODE_EXECPATH at the live `claude` on PATH at launch time.
+# Resolving it here (not at install time) means a user who installs or
+# upgrades the official client afterwards is picked up automatically.
+# `command -v` is a POSIX builtin; `|| true` keeps a clean miss from
+# tripping `set -e` under bash 5+.
+CLAUDE_BIN=$(command -v claude 2>/dev/null || true)
+if [ -z "$CLAUDE_BIN" ]; then
+  # No claude in PATH — fall back to the extracted native binary so
+  # execPath-based re-spawns still report the patched build's version.
+  CLAUDE_BIN="$CLAWGOD_DIR/claude.fallback"
+  if [ ! -f "$CLAUDE_BIN" ] && [ -f "$CLAWGOD_DIR/claude.staged" ]; then
+    mv -f "$CLAWGOD_DIR/claude.staged" "$CLAUDE_BIN"
+    chmod +x "$CLAUDE_BIN"
+  fi
+  dim "No existing claude found — CLAUDE_CODE_EXECPATH will point at $CLAUDE_BIN"
+fi
+
+# Remove any backup artifacts from earlier installer versions — they are no
+# longer produced or consumed.
+rm -f "$BIN_DIR/claude.orig"
 
 write_launcher "$BIN_DIR/clawgod"
 info "Command 'clawgod' → patched ($BIN_DIR/clawgod); 'claude' untouched"

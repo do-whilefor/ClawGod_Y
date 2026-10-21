@@ -67,11 +67,5 @@ try {
         $expected = if ($enabled) { 'PATCH_ARGS=["--tolerate-stale"]' } else { 'PATCH_ARGS=[]' }
         Assert ($output.Contains($expected)) "Patch arguments did not match -TolerateStale=$enabled`: $output"
     }
-    $staleCleanup = [regex]::Match($template, '(?s)# A failed earlier upgrade may have left a newer native binary staged\..*?(?=# --- Write re-patch helper)').Value
-    Assert $staleCleanup 'Stale native cleanup section not found'
-    Set-Content (Join-Path $ClawDir 'claude.staged.exe') 'stale newer binary'
-    $NoUpgrade = [switch]$true
-    . ([ScriptBlock]::Create($staleCleanup))
-    Assert (-not (Test-Path (Join-Path $ClawDir 'claude.staged.exe'))) '-NoUpgrade retained a stale staged binary'
     Write-Host '[source-recovery.test] exact-version migration and failure rollback passed'
 } finally { Remove-Item -Recurse -Force $ClawDir }

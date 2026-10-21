@@ -12,64 +12,73 @@ if (process.platform === 'win32') {
 
 const root = mkdtempSync(join(tmpdir(), 'clawgod-native-refresh-'));
 try {
-  // Run the real installer section: from the refresh down to the launcher.
+  // Run the real installer launcher section: this fork installs only the
+  // `clawgod` launcher and never replaces, renames or backs up `claude`.
   const template = readFileSync(new URL('../templates/install.sh', import.meta.url), 'utf8');
-  const start = template.indexOf('# Refresh claude.orig from the binary this run extracted.');
-  const section = template.slice(start, template.indexOf('# Write launcher to the SAME directory', start));
-  assert.ok(start > 0 && section.includes('# Back up original claude (only once)'));
+  const start = template.indexOf('# ─── Install the clawgod launcher');
+  const end = template.indexOf('# ─── Check PATH', start);
+  assert.ok(start > 0 && end > start, 'launcher section not found');
+  const section = template.slice(start, end);
+  assert.ok(section.includes('write_launcher "$BIN_DIR/clawgod"'), 'section must write only the clawgod launcher');
+  assert.ok(!section.includes('write_launcher "$CLAUDE_BIN"'), 'section must not overwrite claude');
 
   const clawgod = join(root, '.clawgod');
   const bin = join(root, 'bin');
-  const versions = join(root, '.local/share/claude/versions');
-  for (const dir of [clawgod, bin, versions]) mkdirSync(dir, { recursive: true });
+  mkdirSync(bin, { recursive: true });
   const claude = join(bin, 'claude');
-  const orig = claude + '.orig';
-  const staged = join(clawgod, 'claude.staged');
-  const env = { ...process.env, HOME: root, CLAWGOD_DIR: clawgod, CLAUDE_BIN: claude };
-  const cleanupStart = template.indexOf('# A failed earlier upgrade may have left a newer native binary staged.');
-  const cleanup = template.slice(cleanupStart, template.indexOf('# ─── Write re-patch helper', cleanupStart));
-  assert.ok(cleanupStart > 0);
-  writeFileSync(staged, 'stale newer binary');
-  const cleanupResult = spawnSync('bash', ['-c', 'set -e\n' + cleanup], { env: { ...env, NO_UPGRADE: '1' }, encoding: 'utf8' });
-  assert.equal(cleanupResult.status, 0, cleanupResult.stderr);
-  assert.equal(existsSync(staged), false, '--no-upgrade must discard a stale staged binary');
-  const install = () => {
-    const result = spawnSync('bash', ['-c', 'set -e\ninfo() { echo "$*"; }; warn() { echo "$*"; }; dim() { :; };\n' + section], { env, encoding: 'utf8' });
+  const env = { ...process.env, HOME: root, CLAWGOD_DIR: clawgod, BIN_DIR: bin, BUN_BIN: '/bin/true' };
+  // The section downloads the clawgod-import helper; keep the test offline.
+  const script = 'set -e\ninfo() { echo "$*"; }; warn() { echo "$*"; }; dim() { :; };\ncurl() { return 1; }\n' + section;
+  const install = (extra = {}) => {
+    const result = spawnSync('bash', ['-c', script], { env: { ...env, ...extra }, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     return result.stdout;
   };
 
-  // Native install that clawgod already wrapped: claude.orig is the symlink
-  // taken at first install and still points at the version from back then.
-  const old = join(versions, '2.1.270');
-  writeFileSync(old, 'native 2.1.270', { mode: 0o755 });
-  symlinkSync(old, orig);
-  writeFileSync(claude, '#!/bin/bash\n# clawgod launcher\n', { mode: 0o755 });
+  // Fresh install with claude on PATH: the launcher resolves execPath at
+  // launch time, and the binary stays byte-identical with no backups.
+  writeFileSync(claude, 'native binary', { mode: 0o755 });
+  const out = install({ PATH: `${bin}:${process.env.PATH}` });
+  assert.match(out, /'clawgod'.*patched.*'claude' untouched/);
+  assert.equal(readFileSync(claude, 'utf8'), 'native binary');
+  assert.equal(existsSync(claude + '.orig'), false, 'claude.orig must not be created');
+  const launcher = readFileSync(join(bin, 'clawgod'), 'utf8');
+  assert.ok(launcher.includes('CLAUDE_CODE_EXECPATH="$CLAUDE_BIN"'), 'launcher must resolve execPath at launch time');
+  assert.ok(launcher.includes('command -v claude'), 'launcher must resolve claude from PATH');
+  assert.equal(existsSync(join(clawgod, 'claude.staged')), false, 'staged binary must be discarded when claude exists');
 
-  // --no-upgrade stages nothing and must leave the backup alone.
-  assert.doesNotMatch(install(), /refreshed/);
-  assert.ok(lstatSync(orig).isSymbolicLink());
-
-  // An upgrade replaces the link itself, not the file behind it.
-  writeFileSync(staged, 'native 2.1.291');
-  assert.match(install(), /Native binary refreshed/);
-  assert.equal(lstatSync(orig).isSymbolicLink(), false);
-  assert.equal(readFileSync(orig, 'utf8'), 'native 2.1.291');
-  assert.ok(lstatSync(orig).mode & 0o100, 'claude.orig must be executable');
-  assert.equal(readFileSync(old, 'utf8'), 'native 2.1.270', 'wrote through the symlink into versions/');
-  assert.equal(existsSync(staged), false);
-
-  // First install: the staged binary wins over whatever the backup would find.
-  rmSync(orig);
+  // Native installs where `claude` is a symlink into versions/ are followed
+  // for execPath but never written through.
   rmSync(claude);
-  symlinkSync(old, claude);
-  writeFileSync(staged, 'native 2.1.291');
-  const first = install();
-  assert.match(first, /Native binary refreshed/);
-  assert.doesNotMatch(first, /backed up/);
-  assert.equal(readFileSync(orig, 'utf8'), 'native 2.1.291');
+  const versions = join(root, '.local/share/claude/versions');
+  mkdirSync(versions, { recursive: true });
+  const native = join(versions, '2.1.285');
+  writeFileSync(native, 'native 2.1.285', { mode: 0o755 });
+  symlinkSync(native, claude);
+  writeFileSync(join(clawgod, 'claude.staged'), 'staged binary');
+  install({ PATH: `${bin}:${process.env.PATH}` });
+  assert.ok(lstatSync(claude).isSymbolicLink(), 'claude symlink was replaced');
+  assert.equal(readFileSync(native, 'utf8'), 'native 2.1.285');
+  assert.equal(existsSync(join(clawgod, 'claude.staged')), false, 'staged binary must be discarded when claude exists');
 
-  console.log('[native-refresh.test] upgrade refresh, symlink safety, no-upgrade, and first install passed');
+  // Without any claude on PATH, the staged binary becomes the execPath
+  // fallback so re-spawned sessions still report the patched version.
+  rmSync(claude);
+  writeFileSync(join(clawgod, 'claude.staged'), 'fallback binary');
+  const fallbackOut = install({ PATH: '/usr/bin:/bin' });
+  assert.match(fallbackOut, /No existing claude found/);
+  assert.equal(readFileSync(join(clawgod, 'claude.fallback'), 'utf8'), 'fallback binary');
+  assert.equal(existsSync(join(clawgod, 'claude.staged')), false);
+
+  // Artifacts left by installer versions that did replace claude are swept:
+  // the claude.orig backup.
+  writeFileSync(claude, 'restored', { mode: 0o755 });
+  writeFileSync(join(bin, 'claude.orig'), 'old backup');
+  install({ PATH: `${bin}:${process.env.PATH}` });
+  assert.equal(existsSync(join(bin, 'claude.orig')), false, 'stale claude.orig was not swept');
+  assert.equal(readFileSync(claude, 'utf8'), 'restored');
+
+  console.log('[native-refresh.test] clawgod-only launcher, launch-time execPath, fallback staging, and legacy sweep passed');
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
