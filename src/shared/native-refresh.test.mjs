@@ -56,6 +56,7 @@ try {
   const native = join(versions, '2.1.285');
   writeFileSync(native, 'native 2.1.285', { mode: 0o755 });
   symlinkSync(native, claude);
+  mkdirSync(clawgod, { recursive: true });
   writeFileSync(join(clawgod, 'claude.staged'), 'staged binary');
   install({ PATH: `${bin}:${process.env.PATH}` });
   assert.ok(lstatSync(claude).isSymbolicLink(), 'claude symlink was replaced');

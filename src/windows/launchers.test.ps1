@@ -108,3 +108,7 @@ try {
     $env:PATH = $savedPath
     Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
 }
+
+# The final assertion shells out to clawgod.cmd, which exits 127 by design
+# (no import tool installed); don't let that leak as the script's exit code.
+exit 0

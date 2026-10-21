@@ -462,7 +462,9 @@ fi
 dim "Applying patches ..."
 patch_args=()
 if [ "$TOLERATE_STALE" = "1" ]; then patch_args+=(--tolerate-stale); fi
-node "$CLAWGOD_DIR/patch.mjs" "${patch_args[@]}" 2>&1 | while IFS= read -r line; do echo "  $line"; done
+# Parsing ~10 MB of bundled cli.js with acorn can exceed Node's default
+# 2 GB old-space on memory-tight machines (seen on macOS CI runners).
+node --max-old-space-size=4096 "$CLAWGOD_DIR/patch.mjs" "${patch_args[@]}" 2>&1 | while IFS= read -r line; do echo "  $line"; done
 patch_status=${PIPESTATUS[0]}
 if [ "$patch_status" -ne 0 ]; then
   warn "Patching failed (node exit $patch_status). Installation aborted."

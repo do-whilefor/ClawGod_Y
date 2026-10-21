@@ -168,7 +168,7 @@ try {
   // Run the actual POSIX installer check section without installing anything.
   if (process.platform !== 'win32') {
     const template = fs.readFileSync(join(sourceDir, '../templates/install.sh'), 'utf8');
-    const section = template.slice(template.indexOf('dim "Verifying Bun'), template.indexOf('# ─── Replace claude command'));
+    const section = template.slice(template.indexOf('dim "Verifying Bun'), template.indexOf('# ─── Install the clawgod launcher'));
     assert.ok(section.startsWith('dim "Verifying Bun'));
     fs.copyFileSync(checker, join(dir, 'startup-check.cjs'));
     const script = `set -e\nCLAWGOD_DIR="$1"\nBUN_BIN="$2"\nwarn(){ printf '%s\\n' "$*"; }\ninfo(){ printf '%s\\n' "$*"; }\ndim(){ :; }\nrollback_install(){ :; }\n${section}\nprintf 'launcher-step-reached\\n'\n`;
