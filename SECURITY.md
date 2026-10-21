@@ -1,10 +1,10 @@
-# PwnMesh Disclaimer and Usage Compliance Notice
+# ClawGod_Y Disclaimer and Usage Compliance Notice
 
-This notice applies to the PwnMesh project's code, tools, and related documentation. Read this notice and the [GNU General Public License v3.0 (GPL v3)](LICENSE) before use. The license governs permission to use, copy, modify, and distribute the software. This notice neither replaces nor changes the license, and does not grant permission to test any third-party system.
+This notice applies to the ClawGod_Y project's code, tools, and related documentation. Read this notice and the [GNU General Public License v3.0 (GPL v3)](LICENSE) before use. The license governs permission to use, copy, modify, and distribute the software. This notice neither replaces nor changes the license, and does not grant permission to test any third-party system.
 
 ## 1 Intended Use
 
-PwnMesh is intended for lawful technical research, authorized security testing, internal risk assessments, and other technical work permitted by the license. Its security testing features are intended to help discover and validate risks, improve defenses, and support vulnerability management in compliance with applicable requirements.
+ClawGod_Y is intended for lawful technical research, authorized security testing, internal risk assessments, and other technical work permitted by the license. Its security testing features are intended to help discover and validate risks, improve defenses, and support vulnerability management in compliance with applicable requirements.
 
 The GNU GPL v3 permits commercial and noncommercial use, modification, and distribution, subject to its terms. When distributing the software, comply with the applicable copyright notice, licensing, and corresponding source code requirements. The license does not authorize testing of any target.
 
@@ -54,6 +54,6 @@ Relevant evidence must be collected, retained, and provided lawfully. This notic
 
 ## 7 Final Statement
 
-Use PwnMesh only within lawful authorization and the scope permitted by the license. Users are legally responsible for their actions, data processing, and resulting consequences. The responsibility of parties associated with the project must likewise be determined by their actual conduct and applicable law.
+Use ClawGod_Y only within lawful authorization and the scope permitted by the license. Users are legally responsible for their actions, data processing, and resulting consequences. The responsibility of parties associated with the project must likewise be determined by their actual conduct and applicable law.
 
 If any part of this notice conflicts with mandatory provisions of applicable law, those provisions prevail. Consult an appropriately qualified professional before use if you have questions about authorization, licensing, or the scope of liability.
