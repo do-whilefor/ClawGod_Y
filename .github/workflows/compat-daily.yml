@@ -40,6 +40,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          # build.js --check compares generated installers byte-for-byte;
+          # CRLF conversion on checkout would make them always differ.
+          autocrlf: false
 
       - name: Set up Node.js 24
         uses: actions/setup-node@v5
@@ -120,6 +124,9 @@ jobs:
       EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Installer bytes must match the repository exactly.
+          autocrlf: false
 
       - name: Set up Node.js 24
         uses: actions/setup-node@v5
@@ -508,6 +515,9 @@ jobs:
       CLAWGOD_VERSION: ${{ matrix.claude }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Installer bytes must match the repository exactly.
+          autocrlf: false
 
       - name: Set up Node.js 24
         uses: actions/setup-node@v5
