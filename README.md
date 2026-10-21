@@ -1,8 +1,8 @@
+<div align="center">
+
 # ClawGod_Y
 
-**A runtime patch that turns official Claude Code into a dedicated tool for CTFs, authorized penetration testing, and code audits**
-
-*One command for the patched build. Your original Claude stays untouched.*
+> [Claude Code](https://docs.anthropic.com/en/docs/claude-code) god mode.
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.3.14%2B-000000?logo=bun&logoColor=white)](https://bun.sh/)
@@ -12,6 +12,8 @@
 [Overview](#overview) · [Usage](#usage) · [Usage Limits and Security](#usage-limits-and-security) · [License and Related Files](#license-and-related-files)
 
 [English](README.md) | [中文](README_ZH.md) | [日本語](README_JP.md)
+
+</div>
 
 ## Overview
 
@@ -42,13 +44,13 @@ The patch implementation draws on [0Chencc/clawgod](https://github.com/0Chencc/c
 **macOS / Linux / WSL:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/do-whilefor/clawgod_Y/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh | bash
 ```
 
 **Windows PowerShell:**
 
 ```powershell
-irm https://raw.githubusercontent.com/do-whilefor/clawgod_Y/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1 | iex
 ```
 
 After installation, open a new terminal: `clawgod` starts patched Claude, and `claude` starts original Claude. The patched runtime is stored in `~/.clawgod`, or `%USERPROFILE%\.clawgod` on Windows.

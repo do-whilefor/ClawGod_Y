@@ -1,8 +1,8 @@
+<div align="center">
+
 # ClawGod_Y
 
-**公式 Claude Code を CTF・許可されたペネトレーションテスト・コード監査専用ツールへ変えるランタイムパッチ**
-
-*パッチ済みビルドは1つのコマンドで起動。オリジナルの Claude はそのまま。*
+> [Claude Code](https://docs.anthropic.com/en/docs/claude-code) ゴッドモード。
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.3.14%2B-000000?logo=bun&logoColor=white)](https://bun.sh/)
@@ -12,6 +12,8 @@
 [概要](#概要) · [使用方法](#使用方法) · [利用範囲とセキュリティ](#利用範囲とセキュリティ) · [ライセンスと関連ファイル](#ライセンスと関連ファイル)
 
 [English](README.md) | [中文](README_ZH.md) | [日本語](README_JP.md)
+
+</div>
 
 ## 概要
 
@@ -42,13 +44,13 @@ ClawGod_Y は公式 [Claude Code](https://docs.anthropic.com/en/docs/claude-code
 **macOS / Linux / WSL：**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/do-whilefor/clawgod_Y/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh | bash
 ```
 
 **Windows PowerShell：**
 
 ```powershell
-irm https://raw.githubusercontent.com/do-whilefor/clawgod_Y/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1 | iex
 ```
 
 インストール後、新しいターミナルを開いてください：`clawgod` がパッチ済み Claude を、`claude` がオリジナルの Claude を起動します。パッチ済みランタイムは `~/.clawgod`（Windows では `%USERPROFILE%\.clawgod`）に保存されます。

@@ -1,8 +1,8 @@
+<div align="center">
+
 # ClawGod_Y
 
-**将官方 Claude Code 变为 CTF、授权渗透测试与代码审计专用工具的运行时补丁**
-
-*一个命令启动补丁版，你的原版 Claude 保持不动。*
+> [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 上帝模式。
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.3.14%2B-000000?logo=bun&logoColor=white)](https://bun.sh/)
@@ -12,6 +12,8 @@
 [概述](#概述) · [使用方法](#使用方法) · [安全范围](#安全范围) · [许可证与相关文件](#许可证与相关文件)
 
 [English](README.md) | [中文](README_ZH.md) | [日本語](README_JP.md)
+
+</div>
 
 ## 概述
 
@@ -42,13 +44,13 @@ ClawGod_Y 是针对官方 [Claude Code](https://docs.anthropic.com/en/docs/claud
 **macOS / Linux / WSL：**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/do-whilefor/clawgod_Y/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh | bash
 ```
 
 **Windows PowerShell：**
 
 ```powershell
-irm https://raw.githubusercontent.com/do-whilefor/clawgod_Y/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1 | iex
 ```
 
 安装完成后打开新终端：`clawgod` 启动打补丁的 Claude，`claude` 启动原版 Claude。补丁运行时存放在 `~/.clawgod`，Windows 下为 `%USERPROFILE%\.clawgod`。
