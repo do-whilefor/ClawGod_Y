@@ -7,7 +7,9 @@
 // cli.cjs and both installers embed their own copies of this list; keep them
 // in sync (lean.test.mjs exercises every entry point).
 
-const DENY = ["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","CronCreate","CronDelete","CronList","EnterPlanMode","ExitPlanMode","SendMessage","ScheduleWakeup","AskUserQuestion","ReportFindings"];
+// SendMessage and AskUserQuestion are NOT denied: they are the IPC channels
+// agent-teams subagents use to coordinate, which the pentest build wants.
+const DENY = ["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","CronCreate","CronDelete","CronList","EnterPlanMode","ExitPlanMode","ScheduleWakeup","ReportFindings"];
 const FLAGS = ["disableWorkflows","disableClaudeAiConnectors","disableArtifact","disableBundledSkills","disableRemoteControl"];
 
 function leanApply(settingsPath) {
