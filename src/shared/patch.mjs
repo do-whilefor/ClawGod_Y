@@ -793,6 +793,7 @@ const PENTEST_AST_META = {
   'security-voice-off': 'Disable voice mode',
   'security-brief-off': 'Disable Brief mode',
   'security-cowork-off': 'Disable Cowork-specific startup',
+  'security-warnings-off': 'Suppress startup warnings for removed tools and unrecognized models',
   'cli-header-label': 'Startup header → Claude Code_Y',
   'pentest-prompt-rewrite': 'Strip client-side safety prompts and reword identity to authorized pentest context',
 };
