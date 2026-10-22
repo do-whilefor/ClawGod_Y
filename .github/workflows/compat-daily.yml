@@ -313,7 +313,10 @@ jobs:
               exit 1
             fi
           done
-          node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(s.disableRemoteControl===true) throw Error("default Lean must allow Remote Control")' "$settings"
+          # ClawGod_Y is a pentest fork: Lean intentionally sets disableRemoteControl=true
+          # (paired with the security-remote-control-off patch). The upstream assertion
+          # "default Lean must allow Remote Control" was inherited from the office-oriented
+          # fork and contradicts this build's goals — drop it.
           for tool in DesignSync NotebookEdit CronCreate; do
             if ! grep -q "\"$tool\"" "$settings"; then
               echo "::error::deny tool $tool missing from settings.json"
