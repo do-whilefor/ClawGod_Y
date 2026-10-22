@@ -90,6 +90,6 @@ jobs:
             gh release upload "$tag" install.sh install.ps1 --clobber
           else
             gh release create "$tag" install.sh install.ps1 \
-              --title "ClawGod $tag" \
+              --title "ClawGod_Y $tag" \
               --notes-file release-notes.md
           fi
