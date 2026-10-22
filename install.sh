@@ -9909,7 +9909,14 @@ function scanWarningSuppression(tree, code, results, edit) {
       if (idProp && literal(idProp.value, 'model-unrecognized') &&
           node.properties.some(p => p.type === 'Property' && keyOf(p) === 'render')) {
         results[id].present = true;
-        const replacement = parent?.type === 'ArrayExpression' ? `...[]${marker}` : `null${marker}`;
+        // Array element → splice it out. Any other context (variable
+        // declarator, push argument, …) cannot become null: the startup
+        // renderer dereferences every registered notice via
+        // `_0.filter(h=>h.isActive(m))`, so a null descriptor crashes the
+        // TUI on launch. Emit a permanently-inactive descriptor instead;
+        // `render:()=>null` mirrors the upstream null-warning branch.
+        const replacement = parent?.type === 'ArrayExpression' ? `...[]${marker}`
+          : `{id:"model-unrecognized",tier:"warning",type:"warning",isActive:()=>!1,render:()=>null}${marker}`;
         edit(id, node, replacement);
         return false;
       }
