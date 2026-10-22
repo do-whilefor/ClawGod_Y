@@ -10376,7 +10376,14 @@ function leanApply(settingsPath) {
   for (const k of FLAGS) { if (!(k in s)) { s[k] = true; changed = true; } }
   const ex = new Set(s.permissions.deny);
   for (const t of DENY) { if (!ex.has(t)) { s.permissions.deny.push(t); changed = true; } }
-  if (changed) { try { fs.writeFileSync(settingsPath, JSON.stringify(s, null, 2) + "\n"); } catch {} }
+  if (changed) {
+    try {
+      // Fresh environments (CI runners, first-time users) have no ~/.claude
+      // directory yet — create it so the writeFileSync below does not ENOENT.
+      fs.mkdirSync(require("path").dirname(settingsPath), { recursive: true });
+      fs.writeFileSync(settingsPath, JSON.stringify(s, null, 2) + "\n");
+    } catch {}
+  }
 }
 
 module.exports = { leanApply, DENY, FLAGS };
