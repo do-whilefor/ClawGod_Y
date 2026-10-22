@@ -39,11 +39,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Byte-exact LF checkouts come from .gitattributes (eol=lf);
+      # build.js --check compares generated installers byte-for-byte.
       - uses: actions/checkout@v5
-        with:
-          # build.js --check compares generated installers byte-for-byte;
-          # CRLF conversion on checkout would make them always differ.
-          autocrlf: false
 
       - name: Set up Node.js 24
         uses: actions/setup-node@v5
@@ -123,10 +121,8 @@ jobs:
       SMOKE_RUNNER: ${{ matrix.os }}
       EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
+      # Byte-exact LF checkouts come from .gitattributes (eol=lf).
       - uses: actions/checkout@v5
-        with:
-          # Installer bytes must match the repository exactly.
-          autocrlf: false
 
       - name: Set up Node.js 24
         uses: actions/setup-node@v5
@@ -511,10 +507,8 @@ jobs:
       NPM_CONFIG_CACHE: ${{ github.workspace }}\.npm-cache
       CLAWGOD_VERSION: ${{ matrix.claude }}
     steps:
+      # Byte-exact LF checkouts come from .gitattributes (eol=lf).
       - uses: actions/checkout@v5
-        with:
-          # Installer bytes must match the repository exactly.
-          autocrlf: false
 
       - name: Set up Node.js 24
         uses: actions/setup-node@v5
