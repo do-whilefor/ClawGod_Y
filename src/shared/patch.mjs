@@ -3,7 +3,7 @@
  * ClawGod Universal Patcher — AST semantic patches + legacy regex patches
  */
 import { readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, renameSync, unlinkSync } from 'fs';
-import { join, dirname, relative } from 'path';
+import { join, dirname, relative, resolve as resolvePath, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { AST_PATCH_IDS, scanAstPatches, applyAstEdits, parsePatchSource } from './ast-patches.mjs';
 // CLAWGOD_Y HOOK (1 of 4) — fork-only pentest layer: forced bypassPermissions,
@@ -913,8 +913,10 @@ if (isGraph) {
   files[TARGET] = readFileSync(TARGET, 'utf8');
 }
 // CLAWGOD_Y: pristine copy for the prune pass (deleted/kept decisions need
-// the pre-patch reference graph).
-const originalFiles = { ...files };
+// the pre-patch reference graph). Taken AFTER the clean-source restore below:
+// on re-runs the on-disk files may already be patched and pruned, so they are
+// not a valid baseline for this run.
+let originalFiles = null;
 
 // Extract version from entry content
 const version = (files[TARGET] || '').match(/Version:\s*([\d.]+)/)?.[1] || 'unknown';
@@ -964,6 +966,10 @@ if (revert) {
   console.log('Reverted all source files from clean backup');
   process.exit(0);
 }
+
+// The baseline the prune pass compares against must be THIS run's clean
+// source (the restored backup), not the possibly patched+pruned disk state.
+originalFiles = { ...files };
 
 console.log(`\n${'═'.repeat(55)}`);
 console.log(`  ClawGod (universal)`);
@@ -1159,13 +1165,10 @@ if (!dryRun && !verify && applied > 0) {
       if (content !== files[name] && /\.(c?js|mjs)$/i.test(name)) parsePatchSource(content);
     }
     const removedCount = Object.keys(files).length - Object.keys(pruned).length;
-    if (removedCount > 0) {
-      for (const name of Object.keys(files)) {
-        if (!Object.hasOwn(pruned, name) && existsSync(name)) unlinkSync(name);
-      }
-    }
     files = pruned;
-    console.log(`  ✂️  Pruned: ${removedCount} unreachable chunk(s) removed`);
+    if (removedCount > 0) {
+      console.log(`  ✂️  Pruned: ${removedCount} unreachable chunk(s) (deleted after all sources are written)`);
+    }
   } catch (error) {
     console.error(`Pentest prune failed: ${error.message}. Source files were not changed.`);
     process.exit(1);
@@ -1184,8 +1187,32 @@ if (!dryRun && !verify && applied > 0) {
     copyFileSync(TARGET, BACKUP);
     console.log(`  📦 Backup: ${BACKUP}`);
   }
-  for (const [fname, content] of Object.entries(files)) {
-    writeFileSync(fname, content, 'utf8');
+  // Stage every file next to its target, then rename into place. Only after
+  // all sources are live are pruned chunks deleted, so a write failure never
+  // leaves the entry requiring a chunk that is already gone.
+  const staged = [];
+  try {
+    for (const [fname, content] of Object.entries(files)) {
+      const tmp = `${fname}.clawgod-${process.pid}.tmp`;
+      writeFileSync(tmp, content, 'utf8');
+      staged.push([tmp, fname]);
+    }
+    for (const [tmp, fname] of staged) renameSync(tmp, fname);
+  } catch (error) {
+    for (const [tmp] of staged) { try { if (existsSync(tmp)) unlinkSync(tmp); } catch {} }
+    console.error(`Writing patched sources failed: ${error.message}. On-disk sources were left untouched.`);
+    process.exit(1);
+  }
+  // Stale chunks from the previous run (pruned now or earlier) must not stay
+  // loadable. Only ever unlink files under bunfs/.
+  const stale = existsSync(GRAPH_DIR)
+    ? readdirSync(GRAPH_DIR).filter(f => /\.m?js$/.test(f))
+    : [];
+  for (const f of stale) {
+    const full = join(GRAPH_DIR, f);
+    if (!Object.hasOwn(files, full) && resolvePath(full).startsWith(resolvePath(GRAPH_DIR) + sep)) {
+      try { unlinkSync(full); } catch {}
+    }
   }
   const origSize = isGraph ? 0 : (readFileSync(BACKUP, 'utf8').length || 0);
   console.log(`  📝 Written: ${Object.keys(files).length} file(s) ${isGraph ? '(graph)' : ''}`);

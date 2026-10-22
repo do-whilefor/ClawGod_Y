@@ -70,17 +70,9 @@ irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1 | i
 
 OpenAI Chat Completions 互換サービスの場合は `protocol` を `openai-chat` に設定し、プロバイダの `baseURL`、API キー、モデル名を入力してください。API 認証情報ではなく Claude サブスクリプションのログインを使う場合は、`provider.json` をデフォルトのままにしてください。`clawgod` は `~/.claude.json` の既存ログインを共有します。保存後、`clawgod` を再起動してください。
 
-### アップデート
-
-```bash
-clawgod update                    # 最新の Claude Code リリースを取得して再パッチ
-clawgod update --version 2.1.180  # 特定バージョンをインストール
-clawgod update --no-upgrade       # インストール済みバージョンに再パッチ
-```
-
 ### アンインストール
 
-**macOS / Linux / WSL：** インストーラを `--uninstall` 付きで再実行。**Windows：** インストーラを `-Uninstall` 付きで再実行。`clawgod` ランチャと `~/.clawgod` ランタイムが削除されます。オリジナルの `claude` はインストール時に変更されていないため、復元は不要です。
+**macOS / Linux / WSL：** `bash ~/.clawgod/install.sh --uninstall` を実行（またはインストーラを `--uninstall` 付きで再実行）。**Windows：** `powershell -File "$env:USERPROFILE\.clawgod\install.ps1" -Uninstall` を実行（またはインストーラを `-Uninstall` 付きで再実行）。`clawgod` ランチャと `~/.clawgod` ランタイムが削除されます。`~/.claude/settings.json` は変更されません——Lean モードが書き込んだ deny エントリはそのまま残るので、不要なら手動で削除してください。オリジナルの `claude` はインストール時に変更されていないため、復元は不要です。
 
 ## 利用範囲とセキュリティ
 

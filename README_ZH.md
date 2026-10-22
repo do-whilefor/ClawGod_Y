@@ -70,17 +70,9 @@ irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1 | i
 
 使用 OpenAI Chat Completions 兼容服务时，将 `protocol` 设为 `openai-chat`，并填写服务商的 `baseURL`、API 密钥和模型名称。如果你使用 Claude 订阅账号登录而非 API 凭证，保持 `provider.json` 为默认值即可——`clawgod` 会共享 `~/.claude.json` 中已有的登录态。保存文件后重启 `clawgod`。
 
-### 更新
-
-```bash
-clawgod update                    # 拉取最新 Claude Code 版本并重新打补丁
-clawgod update --version 2.1.180  # 安装指定版本
-clawgod update --no-upgrade       # 对已安装的版本重新打补丁
-```
-
 ### 卸载
 
-**macOS / Linux / WSL：** 重新运行安装器并附加 `--uninstall`。**Windows：** 重新运行安装器并附加 `-Uninstall`。卸载会移除 `clawgod` 启动器和 `~/.clawgod` 运行时。原版 `claude` 在安装时未被改动，无需恢复。
+**macOS / Linux / WSL：** 运行 `bash ~/.clawgod/install.sh --uninstall`（或重新运行安装器并附加 `--uninstall`）。**Windows：** 运行 `powershell -File "$env:USERPROFILE\.clawgod\install.ps1" -Uninstall`（或重新运行安装器并附加 `-Uninstall`）。卸载会移除 `clawgod` 启动器和 `~/.clawgod` 运行时，不改动 `~/.claude/settings.json`——Lean 模式写入的禁用条目会保留，需要的话卸载后手动删除即可。原版 `claude` 在安装时未被改动，无需恢复。
 
 ## 安全范围
 

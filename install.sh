@@ -64,7 +64,7 @@ if [ "$UNINSTALL" = "1" ]; then
       info "Removed ClawGod launcher ($DIR/clawgod)"
     fi
   done
-  rm -rf "$CLAWGOD_DIR/node_modules" "$CLAWGOD_DIR/vendor" "$CLAWGOD_DIR/bun-runtime" "$CLAWGOD_DIR/cli.original.js" "$CLAWGOD_DIR/cli.original.js.bak" "$CLAWGOD_DIR/cli.original.cjs" "$CLAWGOD_DIR/cli.original.cjs.bak" "$CLAWGOD_DIR/source-backup.json" "$CLAWGOD_DIR/cli.js" "$CLAWGOD_DIR/cli.cjs" "$CLAWGOD_DIR/patch.mjs" "$CLAWGOD_DIR/ast-patches.mjs" "$CLAWGOD_DIR/acorn.mjs" "$CLAWGOD_DIR/acorn.LICENSE" "$CLAWGOD_DIR/patch.js" "$CLAWGOD_DIR/extract-natives.mjs" "$CLAWGOD_DIR/post-process.mjs" "$CLAWGOD_DIR/repatch.mjs" "$CLAWGOD_DIR/startup-check.cjs" "$CLAWGOD_DIR/startup-check.log" "$CLAWGOD_DIR/openai-proxy.cjs" "$CLAWGOD_DIR/feature-gates.cjs" "$CLAWGOD_DIR/runtime-helpers.cjs" "$CLAWGOD_DIR/bun-ant-shim.cjs" "$CLAWGOD_DIR/clawgod-import" "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback" "$CLAWGOD_DIR/.source-version"
+  rm -rf "$CLAWGOD_DIR/node_modules" "$CLAWGOD_DIR/vendor" "$CLAWGOD_DIR/bun-runtime" "$CLAWGOD_DIR/cli.original.js" "$CLAWGOD_DIR/cli.original.js.bak" "$CLAWGOD_DIR/cli.original.cjs" "$CLAWGOD_DIR/cli.original.cjs.bak" "$CLAWGOD_DIR/source-backup.json" "$CLAWGOD_DIR/cli.js" "$CLAWGOD_DIR/cli.cjs" "$CLAWGOD_DIR/patch.mjs" "$CLAWGOD_DIR/ast-patches.mjs" "$CLAWGOD_DIR/pentest-patches.mjs" "$CLAWGOD_DIR/lean-mode.cjs" "$CLAWGOD_DIR/lean-state.json" "$CLAWGOD_DIR/.lean-disabled" "$CLAWGOD_DIR/.lean-max" "$CLAWGOD_DIR/acorn.mjs" "$CLAWGOD_DIR/acorn.LICENSE" "$CLAWGOD_DIR/patch.js" "$CLAWGOD_DIR/extract-natives.mjs" "$CLAWGOD_DIR/post-process.mjs" "$CLAWGOD_DIR/repatch.mjs" "$CLAWGOD_DIR/startup-check.cjs" "$CLAWGOD_DIR/startup-check.log" "$CLAWGOD_DIR/openai-proxy.cjs" "$CLAWGOD_DIR/feature-gates.cjs" "$CLAWGOD_DIR/runtime-helpers.cjs" "$CLAWGOD_DIR/bun-ant-shim.cjs" "$CLAWGOD_DIR/clawgod-import" "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback" "$CLAWGOD_DIR/.source-version"
   hash -r 2>/dev/null
   info "ClawGod uninstalled"
   echo ""
@@ -285,7 +285,8 @@ PREV_BACKUP_DIR=""
 ROLLBACK_FILES=(cli.original.cjs cli.original.cjs.bak cli.original.js .source-version
   source-backup.json bunfs vendor pathmap.json extract-natives.mjs post-process.mjs
   repatch.mjs openai-proxy.cjs feature-gates.cjs cli.cjs .clawgod-version
-  startup-check.cjs runtime-helpers.cjs bun-ant-shim.cjs patch.mjs ast-patches.mjs acorn.mjs acorn.LICENSE)
+  startup-check.cjs runtime-helpers.cjs bun-ant-shim.cjs patch.mjs ast-patches.mjs
+  pentest-patches.mjs lean-mode.cjs acorn.mjs acorn.LICENSE)
 if [ -f "$CLAWGOD_DIR/cli.original.cjs" ] && [ -f "$CLAWGOD_DIR/.source-version" ]; then
   PREV_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/clawgod-rollback-XXXXXX")
   for f in "${ROLLBACK_FILES[@]}"; do
@@ -1592,12 +1593,13 @@ if (config.effort) {
 if (config.timeoutMs) {
   process.env.API_TIMEOUT_MS ??= String(config.timeoutMs);
 }
-// Remote Control needs GrowthBook evaluation. Restrict network traffic by
-// default only in max mode; on/off retain upstream eligibility checks.
-// Explicit user environment settings still take precedence.
-if (existsSync(join(clawgodDir, '.lean-max')) && !existsSync(join(clawgodDir, '.lean-disabled'))) {
-  process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC ??= '1';
-}
+// Lean mode is a single strictest level applied on install (see
+// lean-mode.cjs), so nonessential traffic is always restricted. Explicit
+// user environment settings still take precedence. Legacy .lean-disabled /
+// .lean-max markers from the three-level scheme are cleaned up here.
+process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC ??= '1';
+try { require('fs').unlinkSync(join(clawgodDir, '.lean-disabled')); } catch {}
+try { require('fs').unlinkSync(join(clawgodDir, '.lean-max')); } catch {}
 process.env.DISABLE_INSTALLATION_CHECKS ??= '1';
 // Updates belong to clawgod's `claude update` redirect. The native background
 // updater can repair a missing Windows claude.exe even at the same version,
@@ -1630,60 +1632,21 @@ if (_realExecPath !== process.execPath) {
   });
 }
 
-// Lean mode toggle — --lean-off / --lean-on / --lean-max
+// Lean mode is no longer toggleable: installed means strictest. Accept the
+// legacy flags so old scripts and muscle memory do not fail; they all just
+// (re)apply the single level.
 if (process.argv.includes('--lean-off') || process.argv.includes('--lean-on') || process.argv.includes('--lean-max')) {
-  const _leanOff = join(clawgodDir, '.lean-disabled');
-  const _leanMax = join(clawgodDir, '.lean-max');
-  const _leanSettings = join(homedir(), '.claude', 'settings.json');
-  const _baseDeny = ['DesignSync','NotebookEdit','PushNotification','RemoteTrigger','CronCreate','CronDelete','CronList'];
-  const _maxDeny = ['EnterPlanMode','ExitPlanMode','SendMessage','ScheduleWakeup','AskUserQuestion','ReportFindings'];
-  const _baseFlags = ['disableWorkflows','disableClaudeAiConnectors','disableArtifact'];
-  const _maxFlags = ['disableBundledSkills','disableRemoteControl'];
-  const _allDeny = new Set([..._baseDeny, ..._maxDeny]);
-  const _allFlags = [..._baseFlags, ..._maxFlags];
-  const _unlink = function(p) { try { require('fs').unlinkSync(p); } catch {} };
-  if (process.argv.includes('--lean-off')) {
-    writeFileSync(_leanOff, '');
-    _unlink(_leanMax);
-    try {
-      const _s = JSON.parse(readFileSync(_leanSettings, 'utf8'));
-      for (const _k of _allFlags) delete _s[_k];
-      if (Array.isArray(_s.permissions?.deny)) _s.permissions.deny = _s.permissions.deny.filter(function(t) { return !_allDeny.has(t); });
-      writeFileSync(_leanSettings, JSON.stringify(_s, null, 2) + '\n');
-    } catch {}
-    process.stderr.write('[clawgod] Lean mode disabled. All tools restored.\n');
-  } else {
-    const _isMax = process.argv.includes('--lean-max');
-    _unlink(_leanOff);
-    if (_isMax) writeFileSync(_leanMax, ''); else _unlink(_leanMax);
-    const _deny = _isMax ? [..._baseDeny, ..._maxDeny] : _baseDeny;
-    const _flags = _isMax ? _allFlags : _baseFlags;
-    try {
-      let _s = {};
-      try { _s = JSON.parse(readFileSync(_leanSettings, 'utf8')); } catch {}
-      let _ch = false;
-      for (const _k of _flags) { if (!(_k in _s)) { _s[_k] = true; _ch = true; } }
-      // If downgrading from max to on, remove max-only keys
-      if (!_isMax) { for (const _k of _maxFlags) { if (_k in _s) { delete _s[_k]; _ch = true; } } }
-      if (!_s.permissions) _s.permissions = {};
-      if (!Array.isArray(_s.permissions.deny)) _s.permissions.deny = [];
-      const _ex = new Set(_s.permissions.deny);
-      for (const _t of _deny) { if (!_ex.has(_t)) { _s.permissions.deny.push(_t); _ch = true; } }
-      // If downgrading from max to on, remove max-only deny entries
-      if (!_isMax) {
-        const _maxSet = new Set(_maxDeny);
-        const _before = _s.permissions.deny.length;
-        _s.permissions.deny = _s.permissions.deny.filter(function(t) { return !_maxSet.has(t); });
-        if (_s.permissions.deny.length !== _before) _ch = true;
-      }
-      if (_ch) writeFileSync(_leanSettings, JSON.stringify(_s, null, 2) + '\n');
-    } catch {}
-    process.stderr.write('[clawgod] Lean mode: ' + (_isMax ? 'max' : 'on') + '. Settings updated.\n');
-  }
+  require('./lean-mode.cjs').leanApply(join(homedir(), '.claude', 'settings.json'));
+  try { require('fs').unlinkSync(join(clawgodDir, '.lean-disabled')); } catch {}
+  try { require('fs').unlinkSync(join(clawgodDir, '.lean-max')); } catch {}
+  process.stderr.write('[clawgod] Lean is a single strictest level; it is applied on install and cannot be toggled off. Edit ~/.claude/settings.json directly to change it.\n');
   process.exit(0);
 }
 
-// Update check — cached, non-blocking, 24h interval
+// Update check — cached, non-blocking, 24h interval. The version is checked
+// against this fork's own releases (the same repo `clawgod update` pulls the
+// installer from), not upstream 0Chencc/clawgod: upstream tags do not predict
+// what the fork installer will build.
 try {
   const _ucFile = join(clawgodDir, '.update-check');
   const _verFile = join(clawgodDir, '.clawgod-version');
@@ -1693,10 +1656,10 @@ try {
     try { if (existsSync(_ucFile)) _uc = JSON.parse(readFileSync(_ucFile, 'utf8')); } catch {}
     var _semGt = function(a, b) { var x = a.split('.'), y = b.split('.'); for (var i = 0; i < 3; i++) { var d = (parseInt(x[i]||0)) - (parseInt(y[i]||0)); if (d) return d > 0; } return false; };
     if (_uc && _uc.v && _semGt(_uc.v, _localVer)) {
-      process.stderr.write('[clawgod] v' + _uc.v + ' available (installed: v' + _localVer + ") — run 'claude update' to upgrade\n");
+      process.stderr.write('[clawgod] ClawGod_Y v' + _uc.v + ' available (installed: v' + _localVer + ") — run 'clawgod update' to upgrade\n");
     }
     if (!_uc || Date.now() - (_uc.t || 0) > 86400000) {
-      fetch('https://api.github.com/repos/0Chencc/clawgod/releases/latest', {
+      fetch('https://api.github.com/repos/do-whilefor/Clawgod_Y/releases/latest', {
         headers: { 'User-Agent': 'clawgod' },
         signal: AbortSignal.timeout(5000),
       }).then(function(r) { return r.json(); }).then(function(d) {
@@ -1706,6 +1669,48 @@ try {
     }
   }
 } catch {}
+
+// `clawgod update` — the fork's own entry point, handled by the wrapper so
+// it works even when the patched bundle is broken. Forwards to the fork
+// installer; --version <v> and --no-upgrade map to installer flags.
+const _argv2 = process.argv[2];
+if (!versionOnly && (_argv2 === 'update' || _argv2 === 'upgrade')) {
+  const _args = process.argv.slice(3);
+  const _isWin = process.platform === 'win32';
+  let _cmd, _cmdArgs;
+  if (_isWin) {
+    let _ps = "$ErrorActionPreference='Stop';try{" +
+      "$u='https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1';" +
+      "$s=irm $u;if([string]::IsNullOrWhiteSpace($s)){throw 'Downloaded installer is empty'};" +
+      "& ([scriptblock]::Create($s)) @args;if(!$?){exit 1}" +
+      "}catch{[Console]::Error.WriteLine($_);exit 1}";
+    const _psArgs = [];
+    for (let i = 0; i < _args.length; i++) {
+      if (_args[i] === '--no-upgrade') _psArgs.push('-NoUpgrade');
+      else if (_args[i] === '--version' && _args[i + 1]) { _psArgs.push('-Version', _args[++i]); }
+      else _psArgs.push(_args[i]);
+    }
+    _ps = _ps.replace('@args', _psArgs.map(a => `'${a.replace(/'/g, "''")}'`).join(','));
+    _cmd = 'powershell';
+    _cmdArgs = ['-NoProfile', '-EncodedCommand', Buffer.from(_ps, 'utf16le').toString('base64')];
+  } else {
+    const _shArgs = [];
+    for (let i = 0; i < _args.length; i++) {
+      if (_args[i] === '--version' && _args[i + 1]) { _shArgs.push('--version', _args[++i]); }
+      else _shArgs.push(_args[i]);
+    }
+    const _sh = 'set -eu; _cg=$(mktemp); trap \'rm -f -- "$_cg"\' EXIT; ' +
+      'curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh -o "$_cg"; ' +
+      'test -s "$_cg" && bash "$_cg"' +
+      _shArgs.map(a => ` '${a.replace(/'/g, `'\\''`)}'`).join('');
+    _cmd = 'bash';
+    _cmdArgs = ['-c', _sh];
+  }
+  process.stderr.write('[clawgod] Updating ClawGod_Y via the fork installer.\n');
+  const _r = spawnSync(_cmd, _cmdArgs, { stdio: 'inherit', env: process.env });
+  if (_r.error) process.stderr.write('[clawgod] Update failed: ' + _r.error.message + '\n');
+  process.exit(Number.isInteger(_r.status) ? _r.status : 1);
+}
 
 // Patch feature gates (~/.clawgod/patches.json + CLAWGOD_FEATURE_* env) —
 // must run before the patched cli loads so gated patches see
@@ -9764,7 +9769,7 @@ export const PENTEST_REGEX_PATCHES = [
         chain + '.allowUnknownOption()' + action +
         `const _ui=process.argv.findIndex(a=>a==="update"||a==="upgrade");` +
         `const _ua=_ui>=0?process.argv.slice(_ui+1):[];` +
-        `if(_ua.length){process.stderr.write("[clawgod_Y] Run claude update without arguments; choose installation options in the terminal.\\n");process.exit(2);}` +
+        `if(_ua.length){process.stderr.write("[clawgod_Y] claude update takes no arguments; use clawgod update (supports --version <v> and --no-upgrade).\\n");process.exit(2);}` +
         `process.stderr.write("[clawgod_Y] Updating ClawGod_Y (main).\\n");` +
         `const _w=process.platform==='win32';` +
         `const _c=_w?['powershell','-NoProfile','-EncodedCommand','${psB64}']:['bash','-c',${JSON.stringify(shScript)}];` +
@@ -10212,13 +10217,43 @@ function applyPruneEdits(code, edits) {
 }
 PENTEST_PATCHES_EOF
 
+cat > "$CLAWGOD_DIR/lean-mode.cjs" << 'LEAN_MODE_EOF'
+// Lean mode: a single strictest level, applied on install. It writes the
+// full managed flag/deny set into the shared ~/.claude/settings.json (adding
+// only what is missing, never touching the user's other entries) and enables
+// the CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC gate via the .lean-max marker.
+// There are no levels and no undo: uninstalling clawgod leaves these entries
+// in place — they are plain settings the user can edit or delete by hand.
+// cli.cjs and both installers embed their own copies of this list; keep them
+// in sync (lean.test.mjs exercises every entry point).
+
+const DENY = ["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","CronCreate","CronDelete","CronList","EnterPlanMode","ExitPlanMode","SendMessage","ScheduleWakeup","AskUserQuestion","ReportFindings"];
+const FLAGS = ["disableWorkflows","disableClaudeAiConnectors","disableArtifact","disableBundledSkills","disableRemoteControl"];
+
+function leanApply(settingsPath) {
+  const fs = require("fs");
+  let s = {};
+  try { s = JSON.parse(fs.readFileSync(settingsPath, "utf8")); } catch {}
+  if (typeof s !== "object" || !s) s = {};
+  if (!s.permissions || typeof s.permissions !== "object") s.permissions = {};
+  if (!Array.isArray(s.permissions.deny)) s.permissions.deny = [];
+  let changed = false;
+  for (const k of FLAGS) { if (!(k in s)) { s[k] = true; changed = true; } }
+  const ex = new Set(s.permissions.deny);
+  for (const t of DENY) { if (!ex.has(t)) { s.permissions.deny.push(t); changed = true; } }
+  if (changed) { try { fs.writeFileSync(settingsPath, JSON.stringify(s, null, 2) + "\n"); } catch {} }
+}
+
+module.exports = { leanApply, DENY, FLAGS };
+LEAN_MODE_EOF
+
 cat > "$CLAWGOD_DIR/patch.mjs" << 'PATCHER_EOF'
 #!/usr/bin/env node
 /**
  * ClawGod Universal Patcher — AST semantic patches + legacy regex patches
  */
 import { readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, renameSync, unlinkSync } from 'fs';
-import { join, dirname, relative } from 'path';
+import { join, dirname, relative, resolve as resolvePath, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { AST_PATCH_IDS, scanAstPatches, applyAstEdits, parsePatchSource } from './ast-patches.mjs';
 // CLAWGOD_Y HOOK (1 of 4) — fork-only pentest layer: forced bypassPermissions,
@@ -11128,8 +11163,10 @@ if (isGraph) {
   files[TARGET] = readFileSync(TARGET, 'utf8');
 }
 // CLAWGOD_Y: pristine copy for the prune pass (deleted/kept decisions need
-// the pre-patch reference graph).
-const originalFiles = { ...files };
+// the pre-patch reference graph). Taken AFTER the clean-source restore below:
+// on re-runs the on-disk files may already be patched and pruned, so they are
+// not a valid baseline for this run.
+let originalFiles = null;
 
 // Extract version from entry content
 const version = (files[TARGET] || '').match(/Version:\s*([\d.]+)/)?.[1] || 'unknown';
@@ -11179,6 +11216,10 @@ if (revert) {
   console.log('Reverted all source files from clean backup');
   process.exit(0);
 }
+
+// The baseline the prune pass compares against must be THIS run's clean
+// source (the restored backup), not the possibly patched+pruned disk state.
+originalFiles = { ...files };
 
 console.log(`\n${'═'.repeat(55)}`);
 console.log(`  ClawGod (universal)`);
@@ -11374,13 +11415,10 @@ if (!dryRun && !verify && applied > 0) {
       if (content !== files[name] && /\.(c?js|mjs)$/i.test(name)) parsePatchSource(content);
     }
     const removedCount = Object.keys(files).length - Object.keys(pruned).length;
-    if (removedCount > 0) {
-      for (const name of Object.keys(files)) {
-        if (!Object.hasOwn(pruned, name) && existsSync(name)) unlinkSync(name);
-      }
-    }
     files = pruned;
-    console.log(`  ✂️  Pruned: ${removedCount} unreachable chunk(s) removed`);
+    if (removedCount > 0) {
+      console.log(`  ✂️  Pruned: ${removedCount} unreachable chunk(s) (deleted after all sources are written)`);
+    }
   } catch (error) {
     console.error(`Pentest prune failed: ${error.message}. Source files were not changed.`);
     process.exit(1);
@@ -11399,8 +11437,32 @@ if (!dryRun && !verify && applied > 0) {
     copyFileSync(TARGET, BACKUP);
     console.log(`  📦 Backup: ${BACKUP}`);
   }
-  for (const [fname, content] of Object.entries(files)) {
-    writeFileSync(fname, content, 'utf8');
+  // Stage every file next to its target, then rename into place. Only after
+  // all sources are live are pruned chunks deleted, so a write failure never
+  // leaves the entry requiring a chunk that is already gone.
+  const staged = [];
+  try {
+    for (const [fname, content] of Object.entries(files)) {
+      const tmp = `${fname}.clawgod-${process.pid}.tmp`;
+      writeFileSync(tmp, content, 'utf8');
+      staged.push([tmp, fname]);
+    }
+    for (const [tmp, fname] of staged) renameSync(tmp, fname);
+  } catch (error) {
+    for (const [tmp] of staged) { try { if (existsSync(tmp)) unlinkSync(tmp); } catch {} }
+    console.error(`Writing patched sources failed: ${error.message}. On-disk sources were left untouched.`);
+    process.exit(1);
+  }
+  // Stale chunks from the previous run (pruned now or earlier) must not stay
+  // loadable. Only ever unlink files under bunfs/.
+  const stale = existsSync(GRAPH_DIR)
+    ? readdirSync(GRAPH_DIR).filter(f => /\.m?js$/.test(f))
+    : [];
+  for (const f of stale) {
+    const full = join(GRAPH_DIR, f);
+    if (!Object.hasOwn(files, full) && resolvePath(full).startsWith(resolvePath(GRAPH_DIR) + sep)) {
+      try { unlinkSync(full); } catch {}
+    }
   }
   const origSize = isGraph ? 0 : (readFileSync(BACKUP, 'utf8').length || 0);
   console.log(`  📝 Written: ${Object.keys(files).length} file(s) ${isGraph ? '(graph)' : ''}`);
@@ -11478,80 +11540,22 @@ if [ ! -f "$CLAWGOD_DIR/patches.json" ]; then
 fi
 
 # ─── Lean mode: optimize ~/.claude/settings.json ─────
-# Three levels: off / on (default) / max
-# State persisted via .lean-disabled and .lean-max flag files.
-# Installer respects existing state on updates — never overwrites user choice.
+# A single strictest level, applied unconditionally on install. There is no
+# off/on/max toggle and no uninstall-time undo: the managed entries are plain
+# settings the user can edit or delete by hand afterwards.
 
-LEAN_OFF_FLAG="$CLAWGOD_DIR/.lean-disabled"
-LEAN_MAX_FLAG="$CLAWGOD_DIR/.lean-max"
-
-# Handle explicit toggle from CLI (--lean-off / --lean-on / --lean-max)
-if [ "$LEAN_OFF" = "1" ]; then
-  touch "$LEAN_OFF_FLAG"; rm -f "$LEAN_MAX_FLAG"
-  CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-  if [ -f "$CLAUDE_SETTINGS" ]; then
-    node -e '
-const fs=require("fs"),p=process.argv[1];
-const allDeny=new Set(["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","CronCreate","CronDelete","CronList","EnterPlanMode","ExitPlanMode","SendMessage","ScheduleWakeup","AskUserQuestion","ReportFindings"]);
-const allFlags=["disableWorkflows","disableRemoteControl","disableClaudeAiConnectors","disableArtifact","disableBundledSkills"];
-let s={};try{s=JSON.parse(fs.readFileSync(p,"utf8"))}catch{process.exit(0)}
-for(const k of allFlags)delete s[k];
-if(Array.isArray(s.permissions?.deny))s.permissions.deny=s.permissions.deny.filter(t=>!allDeny.has(t));
-fs.writeFileSync(p,JSON.stringify(s,null,2)+"\n");
-' "$CLAUDE_SETTINGS" 2>/dev/null
-  fi
-  info "Lean mode disabled (all tools restored)"
-elif [ "$LEAN_ON" = "1" ]; then
-  rm -f "$LEAN_OFF_FLAG" "$LEAN_MAX_FLAG"
-elif [ "$LEAN_MAX" = "1" ]; then
-  rm -f "$LEAN_OFF_FLAG"; touch "$LEAN_MAX_FLAG"
+# Legacy flags from the three-level scheme are accepted as no-ops so old
+# scripts do not fail.
+if [ "$LEAN_OFF" = "1" ] || [ "$LEAN_ON" = "1" ] || [ "$LEAN_MAX" = "1" ]; then
+  dim "Lean is a single strictest level; --lean-off/--lean-on/--lean-max are no-ops"
 fi
+rm -f "$CLAWGOD_DIR/.lean-disabled" "$CLAWGOD_DIR/.lean-max"
 
-if [ ! -f "$LEAN_OFF_FLAG" ]; then
-  CLAUDE_SETTINGS_DIR="$HOME/.claude"
-  CLAUDE_SETTINGS="$CLAUDE_SETTINGS_DIR/settings.json"
-  mkdir -p "$CLAUDE_SETTINGS_DIR"
-  LEAN_IS_MAX="false"
-  [ -f "$LEAN_MAX_FLAG" ] && LEAN_IS_MAX="true"
-
-  node -e '
-const fs = require("fs");
-const settingsPath = process.argv[1];
-const isMax = process.argv[2]?.toLowerCase() === "true";
-const baseDeny = ["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","CronCreate","CronDelete","CronList"];
-const maxDeny = ["EnterPlanMode","ExitPlanMode","SendMessage","ScheduleWakeup","AskUserQuestion","ReportFindings"];
-const baseFlags = ["disableWorkflows","disableClaudeAiConnectors","disableArtifact"];
-const maxFlags = ["disableBundledSkills","disableRemoteControl"];
-const deny = isMax ? [...baseDeny, ...maxDeny] : baseDeny;
-const flags = isMax ? [...baseFlags, ...maxFlags] : baseFlags;
-let s = {};
-try { s = JSON.parse(fs.readFileSync(settingsPath, "utf8")); } catch {}
-let changed = false;
-// Downgrade max to on and migrate the old default Remote Control disable.
-if (!isMax) {
-  for (const k of maxFlags) { if (k in s) { delete s[k]; changed = true; } }
-  if (Array.isArray(s.permissions?.deny)) {
-    const before = s.permissions.deny.length;
-    s.permissions.deny = s.permissions.deny.filter(t => !maxDeny.includes(t));
-    if (s.permissions.deny.length !== before) changed = true;
-  }
-}
-for (const k of flags) { if (!(k in s)) { s[k] = true; changed = true; } }
-if (!s.permissions) s.permissions = {};
-if (!Array.isArray(s.permissions.deny)) s.permissions.deny = [];
-const ex = new Set(s.permissions.deny);
-for (const t of deny) { if (!ex.has(t)) { s.permissions.deny.push(t); changed = true; } }
-if (changed) fs.writeFileSync(settingsPath, JSON.stringify(s, null, 2) + "\n");
-' "$CLAUDE_SETTINGS" "$LEAN_IS_MAX" 2>/dev/null
-
-  if [ -f "$LEAN_MAX_FLAG" ]; then
-    info "Lean settings applied: max (~/.claude/settings.json)"
-  else
-    info "Lean settings applied: on (~/.claude/settings.json)"
-  fi
-else
-  dim "Lean mode disabled (claude --lean-on to re-enable)"
-fi
+node -e '
+const {leanApply}=require(process.argv[2]);
+try{leanApply(process.argv[1])}catch{}
+' "$HOME/.claude/settings.json" "$CLAWGOD_DIR/lean-mode.cjs" 2>/dev/null || true
+info "Lean settings applied (strictest): ~/.claude/settings.json"
 
 # ─── Sanity check: ensure user's Bun can actually load cli.original.cjs ──
 # Anthropic builds the native binary with a bleeding-edge Bun build (e.g.
@@ -11697,6 +11701,16 @@ rm -f "$BIN_DIR/claude.orig"
 
 write_launcher "$BIN_DIR/clawgod"
 info "Command 'clawgod' → patched ($BIN_DIR/clawgod); 'claude' untouched"
+
+# Keep a copy of this installer so uninstall/update work without re-download:
+# README documents `bash ~/.clawgod/install.sh --uninstall`.
+if [ -f "$0" ] && [ "$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" != "$CLAWGOD_DIR/install.sh" ]; then
+  cp "$0" "$CLAWGOD_DIR/install.sh" 2>/dev/null || true
+fi
+if [ ! -f "$CLAWGOD_DIR/install.sh" ]; then
+  curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh -o "$CLAWGOD_DIR/install.sh" 2>/dev/null || true
+fi
+chmod +x "$CLAWGOD_DIR/install.sh" 2>/dev/null || true
 
 # ─── Check PATH ───────────────────────────────────────
 

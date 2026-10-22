@@ -64,7 +64,7 @@ if [ "$UNINSTALL" = "1" ]; then
       info "Removed ClawGod launcher ($DIR/clawgod)"
     fi
   done
-  rm -rf "$CLAWGOD_DIR/node_modules" "$CLAWGOD_DIR/vendor" "$CLAWGOD_DIR/bun-runtime" "$CLAWGOD_DIR/cli.original.js" "$CLAWGOD_DIR/cli.original.js.bak" "$CLAWGOD_DIR/cli.original.cjs" "$CLAWGOD_DIR/cli.original.cjs.bak" "$CLAWGOD_DIR/source-backup.json" "$CLAWGOD_DIR/cli.js" "$CLAWGOD_DIR/cli.cjs" "$CLAWGOD_DIR/patch.mjs" "$CLAWGOD_DIR/ast-patches.mjs" "$CLAWGOD_DIR/acorn.mjs" "$CLAWGOD_DIR/acorn.LICENSE" "$CLAWGOD_DIR/patch.js" "$CLAWGOD_DIR/extract-natives.mjs" "$CLAWGOD_DIR/post-process.mjs" "$CLAWGOD_DIR/repatch.mjs" "$CLAWGOD_DIR/startup-check.cjs" "$CLAWGOD_DIR/startup-check.log" "$CLAWGOD_DIR/openai-proxy.cjs" "$CLAWGOD_DIR/feature-gates.cjs" "$CLAWGOD_DIR/runtime-helpers.cjs" "$CLAWGOD_DIR/bun-ant-shim.cjs" "$CLAWGOD_DIR/clawgod-import" "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback" "$CLAWGOD_DIR/.source-version"
+  rm -rf "$CLAWGOD_DIR/node_modules" "$CLAWGOD_DIR/vendor" "$CLAWGOD_DIR/bun-runtime" "$CLAWGOD_DIR/cli.original.js" "$CLAWGOD_DIR/cli.original.js.bak" "$CLAWGOD_DIR/cli.original.cjs" "$CLAWGOD_DIR/cli.original.cjs.bak" "$CLAWGOD_DIR/source-backup.json" "$CLAWGOD_DIR/cli.js" "$CLAWGOD_DIR/cli.cjs" "$CLAWGOD_DIR/patch.mjs" "$CLAWGOD_DIR/ast-patches.mjs" "$CLAWGOD_DIR/pentest-patches.mjs" "$CLAWGOD_DIR/lean-mode.cjs" "$CLAWGOD_DIR/lean-state.json" "$CLAWGOD_DIR/.lean-disabled" "$CLAWGOD_DIR/.lean-max" "$CLAWGOD_DIR/acorn.mjs" "$CLAWGOD_DIR/acorn.LICENSE" "$CLAWGOD_DIR/patch.js" "$CLAWGOD_DIR/extract-natives.mjs" "$CLAWGOD_DIR/post-process.mjs" "$CLAWGOD_DIR/repatch.mjs" "$CLAWGOD_DIR/startup-check.cjs" "$CLAWGOD_DIR/startup-check.log" "$CLAWGOD_DIR/openai-proxy.cjs" "$CLAWGOD_DIR/feature-gates.cjs" "$CLAWGOD_DIR/runtime-helpers.cjs" "$CLAWGOD_DIR/bun-ant-shim.cjs" "$CLAWGOD_DIR/clawgod-import" "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback" "$CLAWGOD_DIR/.source-version"
   hash -r 2>/dev/null
   info "ClawGod uninstalled"
   echo ""
@@ -285,7 +285,8 @@ PREV_BACKUP_DIR=""
 ROLLBACK_FILES=(cli.original.cjs cli.original.cjs.bak cli.original.js .source-version
   source-backup.json bunfs vendor pathmap.json extract-natives.mjs post-process.mjs
   repatch.mjs openai-proxy.cjs feature-gates.cjs cli.cjs .clawgod-version
-  startup-check.cjs runtime-helpers.cjs bun-ant-shim.cjs patch.mjs ast-patches.mjs acorn.mjs acorn.LICENSE)
+  startup-check.cjs runtime-helpers.cjs bun-ant-shim.cjs patch.mjs ast-patches.mjs
+  pentest-patches.mjs lean-mode.cjs acorn.mjs acorn.LICENSE)
 if [ -f "$CLAWGOD_DIR/cli.original.cjs" ] && [ -f "$CLAWGOD_DIR/.source-version" ]; then
   PREV_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/clawgod-rollback-XXXXXX")
   for f in "${ROLLBACK_FILES[@]}"; do
@@ -448,6 +449,10 @@ cat > "$CLAWGOD_DIR/pentest-patches.mjs" << 'PENTEST_PATCHES_EOF'
 {{CLAWGOD:pentest-patches.mjs}}
 PENTEST_PATCHES_EOF
 
+cat > "$CLAWGOD_DIR/lean-mode.cjs" << 'LEAN_MODE_EOF'
+{{CLAWGOD:lean-mode.cjs}}
+LEAN_MODE_EOF
+
 cat > "$CLAWGOD_DIR/patch.mjs" << 'PATCHER_EOF'
 {{CLAWGOD:patch.mjs}}
 
@@ -509,80 +514,22 @@ if [ ! -f "$CLAWGOD_DIR/patches.json" ]; then
 fi
 
 # ─── Lean mode: optimize ~/.claude/settings.json ─────
-# Three levels: off / on (default) / max
-# State persisted via .lean-disabled and .lean-max flag files.
-# Installer respects existing state on updates — never overwrites user choice.
+# A single strictest level, applied unconditionally on install. There is no
+# off/on/max toggle and no uninstall-time undo: the managed entries are plain
+# settings the user can edit or delete by hand afterwards.
 
-LEAN_OFF_FLAG="$CLAWGOD_DIR/.lean-disabled"
-LEAN_MAX_FLAG="$CLAWGOD_DIR/.lean-max"
-
-# Handle explicit toggle from CLI (--lean-off / --lean-on / --lean-max)
-if [ "$LEAN_OFF" = "1" ]; then
-  touch "$LEAN_OFF_FLAG"; rm -f "$LEAN_MAX_FLAG"
-  CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-  if [ -f "$CLAUDE_SETTINGS" ]; then
-    node -e '
-const fs=require("fs"),p=process.argv[1];
-const allDeny=new Set(["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","CronCreate","CronDelete","CronList","EnterPlanMode","ExitPlanMode","SendMessage","ScheduleWakeup","AskUserQuestion","ReportFindings"]);
-const allFlags=["disableWorkflows","disableRemoteControl","disableClaudeAiConnectors","disableArtifact","disableBundledSkills"];
-let s={};try{s=JSON.parse(fs.readFileSync(p,"utf8"))}catch{process.exit(0)}
-for(const k of allFlags)delete s[k];
-if(Array.isArray(s.permissions?.deny))s.permissions.deny=s.permissions.deny.filter(t=>!allDeny.has(t));
-fs.writeFileSync(p,JSON.stringify(s,null,2)+"\n");
-' "$CLAUDE_SETTINGS" 2>/dev/null
-  fi
-  info "Lean mode disabled (all tools restored)"
-elif [ "$LEAN_ON" = "1" ]; then
-  rm -f "$LEAN_OFF_FLAG" "$LEAN_MAX_FLAG"
-elif [ "$LEAN_MAX" = "1" ]; then
-  rm -f "$LEAN_OFF_FLAG"; touch "$LEAN_MAX_FLAG"
+# Legacy flags from the three-level scheme are accepted as no-ops so old
+# scripts do not fail.
+if [ "$LEAN_OFF" = "1" ] || [ "$LEAN_ON" = "1" ] || [ "$LEAN_MAX" = "1" ]; then
+  dim "Lean is a single strictest level; --lean-off/--lean-on/--lean-max are no-ops"
 fi
+rm -f "$CLAWGOD_DIR/.lean-disabled" "$CLAWGOD_DIR/.lean-max"
 
-if [ ! -f "$LEAN_OFF_FLAG" ]; then
-  CLAUDE_SETTINGS_DIR="$HOME/.claude"
-  CLAUDE_SETTINGS="$CLAUDE_SETTINGS_DIR/settings.json"
-  mkdir -p "$CLAUDE_SETTINGS_DIR"
-  LEAN_IS_MAX="false"
-  [ -f "$LEAN_MAX_FLAG" ] && LEAN_IS_MAX="true"
-
-  node -e '
-const fs = require("fs");
-const settingsPath = process.argv[1];
-const isMax = process.argv[2]?.toLowerCase() === "true";
-const baseDeny = ["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","CronCreate","CronDelete","CronList"];
-const maxDeny = ["EnterPlanMode","ExitPlanMode","SendMessage","ScheduleWakeup","AskUserQuestion","ReportFindings"];
-const baseFlags = ["disableWorkflows","disableClaudeAiConnectors","disableArtifact"];
-const maxFlags = ["disableBundledSkills","disableRemoteControl"];
-const deny = isMax ? [...baseDeny, ...maxDeny] : baseDeny;
-const flags = isMax ? [...baseFlags, ...maxFlags] : baseFlags;
-let s = {};
-try { s = JSON.parse(fs.readFileSync(settingsPath, "utf8")); } catch {}
-let changed = false;
-// Downgrade max to on and migrate the old default Remote Control disable.
-if (!isMax) {
-  for (const k of maxFlags) { if (k in s) { delete s[k]; changed = true; } }
-  if (Array.isArray(s.permissions?.deny)) {
-    const before = s.permissions.deny.length;
-    s.permissions.deny = s.permissions.deny.filter(t => !maxDeny.includes(t));
-    if (s.permissions.deny.length !== before) changed = true;
-  }
-}
-for (const k of flags) { if (!(k in s)) { s[k] = true; changed = true; } }
-if (!s.permissions) s.permissions = {};
-if (!Array.isArray(s.permissions.deny)) s.permissions.deny = [];
-const ex = new Set(s.permissions.deny);
-for (const t of deny) { if (!ex.has(t)) { s.permissions.deny.push(t); changed = true; } }
-if (changed) fs.writeFileSync(settingsPath, JSON.stringify(s, null, 2) + "\n");
-' "$CLAUDE_SETTINGS" "$LEAN_IS_MAX" 2>/dev/null
-
-  if [ -f "$LEAN_MAX_FLAG" ]; then
-    info "Lean settings applied: max (~/.claude/settings.json)"
-  else
-    info "Lean settings applied: on (~/.claude/settings.json)"
-  fi
-else
-  dim "Lean mode disabled (claude --lean-on to re-enable)"
-fi
+node -e '
+const {leanApply}=require(process.argv[2]);
+try{leanApply(process.argv[1])}catch{}
+' "$HOME/.claude/settings.json" "$CLAWGOD_DIR/lean-mode.cjs" 2>/dev/null || true
+info "Lean settings applied (strictest): ~/.claude/settings.json"
 
 # ─── Sanity check: ensure user's Bun can actually load cli.original.cjs ──
 # Anthropic builds the native binary with a bleeding-edge Bun build (e.g.
@@ -728,6 +675,16 @@ rm -f "$BIN_DIR/claude.orig"
 
 write_launcher "$BIN_DIR/clawgod"
 info "Command 'clawgod' → patched ($BIN_DIR/clawgod); 'claude' untouched"
+
+# Keep a copy of this installer so uninstall/update work without re-download:
+# README documents `bash ~/.clawgod/install.sh --uninstall`.
+if [ -f "$0" ] && [ "$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" != "$CLAWGOD_DIR/install.sh" ]; then
+  cp "$0" "$CLAWGOD_DIR/install.sh" 2>/dev/null || true
+fi
+if [ ! -f "$CLAWGOD_DIR/install.sh" ]; then
+  curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh -o "$CLAWGOD_DIR/install.sh" 2>/dev/null || true
+fi
+chmod +x "$CLAWGOD_DIR/install.sh" 2>/dev/null || true
 
 # ─── Check PATH ───────────────────────────────────────
 

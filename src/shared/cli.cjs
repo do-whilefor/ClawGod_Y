@@ -132,12 +132,13 @@ if (config.effort) {
 if (config.timeoutMs) {
   process.env.API_TIMEOUT_MS ??= String(config.timeoutMs);
 }
-// Remote Control needs GrowthBook evaluation. Restrict network traffic by
-// default only in max mode; on/off retain upstream eligibility checks.
-// Explicit user environment settings still take precedence.
-if (existsSync(join(clawgodDir, '.lean-max')) && !existsSync(join(clawgodDir, '.lean-disabled'))) {
-  process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC ??= '1';
-}
+// Lean mode is a single strictest level applied on install (see
+// lean-mode.cjs), so nonessential traffic is always restricted. Explicit
+// user environment settings still take precedence. Legacy .lean-disabled /
+// .lean-max markers from the three-level scheme are cleaned up here.
+process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC ??= '1';
+try { require('fs').unlinkSync(join(clawgodDir, '.lean-disabled')); } catch {}
+try { require('fs').unlinkSync(join(clawgodDir, '.lean-max')); } catch {}
 process.env.DISABLE_INSTALLATION_CHECKS ??= '1';
 // Updates belong to clawgod's `claude update` redirect. The native background
 // updater can repair a missing Windows claude.exe even at the same version,
@@ -170,60 +171,21 @@ if (_realExecPath !== process.execPath) {
   });
 }
 
-// Lean mode toggle — --lean-off / --lean-on / --lean-max
+// Lean mode is no longer toggleable: installed means strictest. Accept the
+// legacy flags so old scripts and muscle memory do not fail; they all just
+// (re)apply the single level.
 if (process.argv.includes('--lean-off') || process.argv.includes('--lean-on') || process.argv.includes('--lean-max')) {
-  const _leanOff = join(clawgodDir, '.lean-disabled');
-  const _leanMax = join(clawgodDir, '.lean-max');
-  const _leanSettings = join(homedir(), '.claude', 'settings.json');
-  const _baseDeny = ['DesignSync','NotebookEdit','PushNotification','RemoteTrigger','CronCreate','CronDelete','CronList'];
-  const _maxDeny = ['EnterPlanMode','ExitPlanMode','SendMessage','ScheduleWakeup','AskUserQuestion','ReportFindings'];
-  const _baseFlags = ['disableWorkflows','disableClaudeAiConnectors','disableArtifact'];
-  const _maxFlags = ['disableBundledSkills','disableRemoteControl'];
-  const _allDeny = new Set([..._baseDeny, ..._maxDeny]);
-  const _allFlags = [..._baseFlags, ..._maxFlags];
-  const _unlink = function(p) { try { require('fs').unlinkSync(p); } catch {} };
-  if (process.argv.includes('--lean-off')) {
-    writeFileSync(_leanOff, '');
-    _unlink(_leanMax);
-    try {
-      const _s = JSON.parse(readFileSync(_leanSettings, 'utf8'));
-      for (const _k of _allFlags) delete _s[_k];
-      if (Array.isArray(_s.permissions?.deny)) _s.permissions.deny = _s.permissions.deny.filter(function(t) { return !_allDeny.has(t); });
-      writeFileSync(_leanSettings, JSON.stringify(_s, null, 2) + '\n');
-    } catch {}
-    process.stderr.write('[clawgod] Lean mode disabled. All tools restored.\n');
-  } else {
-    const _isMax = process.argv.includes('--lean-max');
-    _unlink(_leanOff);
-    if (_isMax) writeFileSync(_leanMax, ''); else _unlink(_leanMax);
-    const _deny = _isMax ? [..._baseDeny, ..._maxDeny] : _baseDeny;
-    const _flags = _isMax ? _allFlags : _baseFlags;
-    try {
-      let _s = {};
-      try { _s = JSON.parse(readFileSync(_leanSettings, 'utf8')); } catch {}
-      let _ch = false;
-      for (const _k of _flags) { if (!(_k in _s)) { _s[_k] = true; _ch = true; } }
-      // If downgrading from max to on, remove max-only keys
-      if (!_isMax) { for (const _k of _maxFlags) { if (_k in _s) { delete _s[_k]; _ch = true; } } }
-      if (!_s.permissions) _s.permissions = {};
-      if (!Array.isArray(_s.permissions.deny)) _s.permissions.deny = [];
-      const _ex = new Set(_s.permissions.deny);
-      for (const _t of _deny) { if (!_ex.has(_t)) { _s.permissions.deny.push(_t); _ch = true; } }
-      // If downgrading from max to on, remove max-only deny entries
-      if (!_isMax) {
-        const _maxSet = new Set(_maxDeny);
-        const _before = _s.permissions.deny.length;
-        _s.permissions.deny = _s.permissions.deny.filter(function(t) { return !_maxSet.has(t); });
-        if (_s.permissions.deny.length !== _before) _ch = true;
-      }
-      if (_ch) writeFileSync(_leanSettings, JSON.stringify(_s, null, 2) + '\n');
-    } catch {}
-    process.stderr.write('[clawgod] Lean mode: ' + (_isMax ? 'max' : 'on') + '. Settings updated.\n');
-  }
+  require('./lean-mode.cjs').leanApply(join(homedir(), '.claude', 'settings.json'));
+  try { require('fs').unlinkSync(join(clawgodDir, '.lean-disabled')); } catch {}
+  try { require('fs').unlinkSync(join(clawgodDir, '.lean-max')); } catch {}
+  process.stderr.write('[clawgod] Lean is a single strictest level; it is applied on install and cannot be toggled off. Edit ~/.claude/settings.json directly to change it.\n');
   process.exit(0);
 }
 
-// Update check — cached, non-blocking, 24h interval
+// Update check — cached, non-blocking, 24h interval. The version is checked
+// against this fork's own releases (the same repo `clawgod update` pulls the
+// installer from), not upstream 0Chencc/clawgod: upstream tags do not predict
+// what the fork installer will build.
 try {
   const _ucFile = join(clawgodDir, '.update-check');
   const _verFile = join(clawgodDir, '.clawgod-version');
@@ -233,10 +195,10 @@ try {
     try { if (existsSync(_ucFile)) _uc = JSON.parse(readFileSync(_ucFile, 'utf8')); } catch {}
     var _semGt = function(a, b) { var x = a.split('.'), y = b.split('.'); for (var i = 0; i < 3; i++) { var d = (parseInt(x[i]||0)) - (parseInt(y[i]||0)); if (d) return d > 0; } return false; };
     if (_uc && _uc.v && _semGt(_uc.v, _localVer)) {
-      process.stderr.write('[clawgod] v' + _uc.v + ' available (installed: v' + _localVer + ") — run 'claude update' to upgrade\n");
+      process.stderr.write('[clawgod] ClawGod_Y v' + _uc.v + ' available (installed: v' + _localVer + ") — run 'clawgod update' to upgrade\n");
     }
     if (!_uc || Date.now() - (_uc.t || 0) > 86400000) {
-      fetch('https://api.github.com/repos/0Chencc/clawgod/releases/latest', {
+      fetch('https://api.github.com/repos/do-whilefor/Clawgod_Y/releases/latest', {
         headers: { 'User-Agent': 'clawgod' },
         signal: AbortSignal.timeout(5000),
       }).then(function(r) { return r.json(); }).then(function(d) {
@@ -246,6 +208,48 @@ try {
     }
   }
 } catch {}
+
+// `clawgod update` — the fork's own entry point, handled by the wrapper so
+// it works even when the patched bundle is broken. Forwards to the fork
+// installer; --version <v> and --no-upgrade map to installer flags.
+const _argv2 = process.argv[2];
+if (!versionOnly && (_argv2 === 'update' || _argv2 === 'upgrade')) {
+  const _args = process.argv.slice(3);
+  const _isWin = process.platform === 'win32';
+  let _cmd, _cmdArgs;
+  if (_isWin) {
+    let _ps = "$ErrorActionPreference='Stop';try{" +
+      "$u='https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1';" +
+      "$s=irm $u;if([string]::IsNullOrWhiteSpace($s)){throw 'Downloaded installer is empty'};" +
+      "& ([scriptblock]::Create($s)) @args;if(!$?){exit 1}" +
+      "}catch{[Console]::Error.WriteLine($_);exit 1}";
+    const _psArgs = [];
+    for (let i = 0; i < _args.length; i++) {
+      if (_args[i] === '--no-upgrade') _psArgs.push('-NoUpgrade');
+      else if (_args[i] === '--version' && _args[i + 1]) { _psArgs.push('-Version', _args[++i]); }
+      else _psArgs.push(_args[i]);
+    }
+    _ps = _ps.replace('@args', _psArgs.map(a => `'${a.replace(/'/g, "''")}'`).join(','));
+    _cmd = 'powershell';
+    _cmdArgs = ['-NoProfile', '-EncodedCommand', Buffer.from(_ps, 'utf16le').toString('base64')];
+  } else {
+    const _shArgs = [];
+    for (let i = 0; i < _args.length; i++) {
+      if (_args[i] === '--version' && _args[i + 1]) { _shArgs.push('--version', _args[++i]); }
+      else _shArgs.push(_args[i]);
+    }
+    const _sh = 'set -eu; _cg=$(mktemp); trap \'rm -f -- "$_cg"\' EXIT; ' +
+      'curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh -o "$_cg"; ' +
+      'test -s "$_cg" && bash "$_cg"' +
+      _shArgs.map(a => ` '${a.replace(/'/g, `'\\''`)}'`).join('');
+    _cmd = 'bash';
+    _cmdArgs = ['-c', _sh];
+  }
+  process.stderr.write('[clawgod] Updating ClawGod_Y via the fork installer.\n');
+  const _r = spawnSync(_cmd, _cmdArgs, { stdio: 'inherit', env: process.env });
+  if (_r.error) process.stderr.write('[clawgod] Update failed: ' + _r.error.message + '\n');
+  process.exit(Number.isInteger(_r.status) ? _r.status : 1);
+}
 
 // Patch feature gates (~/.clawgod/patches.json + CLAWGOD_FEATURE_* env) —
 // must run before the patched cli loads so gated patches see

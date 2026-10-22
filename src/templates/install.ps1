@@ -65,7 +65,7 @@ if ($Uninstall) {
         if (Test-Path $p) { Remove-Item -Force $p }
     }
 
-    foreach ($f in @("cli.js","cli.cjs","cli.original.js","cli.original.cjs","cli.original.js.bak","cli.original.cjs.bak","source-backup.json","patch.js","patch.mjs","ast-patches.mjs","acorn.mjs","acorn.LICENSE","extract-natives.mjs","post-process.mjs","repatch.mjs","startup-check.cjs","startup-check.log","openai-proxy.cjs","feature-gates.cjs","runtime-helpers.cjs","bun-ant-shim.cjs","clawgod-import.exe","claude.staged.exe","claude.fallback.exe",".source-version","node_modules","bun-runtime","vendor","bunfs","pathmap.json")) {
+    foreach ($f in @("cli.js","cli.cjs","cli.original.js","cli.original.cjs","cli.original.js.bak","cli.original.cjs.bak","source-backup.json","patch.js","patch.mjs","ast-patches.mjs","pentest-patches.mjs","lean-mode.cjs","lean-state.json",".lean-disabled",".lean-max","acorn.mjs","acorn.LICENSE","extract-natives.mjs","post-process.mjs","repatch.mjs","startup-check.cjs","startup-check.log","openai-proxy.cjs","feature-gates.cjs","runtime-helpers.cjs","bun-ant-shim.cjs","clawgod-import.exe","claude.staged.exe","claude.fallback.exe",".source-version","node_modules","bun-runtime","vendor","bunfs","pathmap.json")) {
         $p = Join-Path $ClawDir $f
         if (Test-Path $p) { Remove-Item -Recurse -Force $p }
     }
@@ -366,7 +366,7 @@ $script:RollbackPending = $false
 $RollbackFiles = @("cli.original.cjs","cli.original.cjs.bak","cli.original.js",".source-version",
     "source-backup.json","bunfs","vendor","pathmap.json","extract-natives.mjs","post-process.mjs",
     "repatch.mjs","openai-proxy.cjs","feature-gates.cjs","cli.cjs",".clawgod-version",
-    "startup-check.cjs","runtime-helpers.cjs","bun-ant-shim.cjs","patch.mjs","ast-patches.mjs","acorn.mjs","acorn.LICENSE")
+    "startup-check.cjs","runtime-helpers.cjs","bun-ant-shim.cjs","patch.mjs","ast-patches.mjs","pentest-patches.mjs","lean-mode.cjs","acorn.mjs","acorn.LICENSE")
 $origCjs = Join-Path $ClawDir "cli.original.cjs"
 $sourceVerFile = Join-Path $ClawDir ".source-version"
 if ((Test-Path $origCjs) -and (Test-Path $sourceVerFile)) {
@@ -545,6 +545,9 @@ Write-OK "Bun.ant runtime shim created (bun-ant-shim.cjs)"
 @'
 {{CLAWGOD:pentest-patches.mjs}}
 '@ | Set-Content (Join-Path $ClawDir "pentest-patches.mjs") -Encoding UTF8
+@'
+{{CLAWGOD:lean-mode.cjs}}
+'@ | Set-Content (Join-Path $ClawDir "lean-mode.cjs") -Encoding UTF8
 
 $patcherCode = @'
 {{CLAWGOD:patch.mjs}}
@@ -624,43 +627,30 @@ if (-not (Test-Path $patchesFile)) {
 }
 
 # --- Lean mode: optimize ~/.claude/settings.json ----------------------
-$leanOffFlag = Join-Path $ClawDir ".lean-disabled"
-$leanMaxFlag = Join-Path $ClawDir ".lean-max"
+# A single strictest level, applied unconditionally on install. There is no
+# off/on/max toggle and no uninstall-time undo: the managed entries are plain
+# settings the user can edit or delete by hand afterwards.
 $claudeSettingsDir = Join-Path $env:USERPROFILE ".claude"
 $claudeSettings = Join-Path $claudeSettingsDir "settings.json"
 New-Item -ItemType Directory -Force -Path $claudeSettingsDir | Out-Null
 
-if ($LeanOff) {
-    New-Item -ItemType File -Force -Path $leanOffFlag | Out-Null
-    if (Test-Path $leanMaxFlag) { Remove-Item $leanMaxFlag -Force }
-    $leanRemoveScript = @'
-{{CLAWGOD:lean-remove.cjs}}
-'@
-    if (Test-Path $claudeSettings) {
-        try { node -e $leanRemoveScript "$claudeSettings" 2>$null } catch {}
-    }
-    Write-OK "Lean mode disabled (all tools restored)"
-} elseif ($LeanOn) {
-    if (Test-Path $leanOffFlag) { Remove-Item $leanOffFlag -Force }
-    if (Test-Path $leanMaxFlag) { Remove-Item $leanMaxFlag -Force }
-} elseif ($LeanMax) {
-    if (Test-Path $leanOffFlag) { Remove-Item $leanOffFlag -Force }
-    New-Item -ItemType File -Force -Path $leanMaxFlag | Out-Null
+# Legacy flags/markers from the three-level scheme are accepted as no-ops so
+# old scripts do not fail.
+if ($LeanOff -or $LeanOn -or $LeanMax) {
+    Write-Dim "Lean is a single strictest level; -LeanOff/-LeanOn/-LeanMax are no-ops"
+}
+foreach ($legacyFlag in @(".lean-disabled", ".lean-max")) {
+    $legacyPath = Join-Path $ClawDir $legacyFlag
+    if (Test-Path $legacyPath) { Remove-Item $legacyPath -Force }
 }
 
-if (-not (Test-Path $leanOffFlag)) {
-    $leanIsMax = (Test-Path $leanMaxFlag)
-    $leanApplyScript = @'
+$leanApplyScript = @'
 {{CLAWGOD:lean-apply.cjs}}
 '@
-    try {
-        node -e $leanApplyScript "$claudeSettings" "$leanIsMax" 2>$null
-        if ($leanIsMax) { Write-OK "Lean settings applied: max (~/.claude/settings.json)" }
-        else { Write-OK "Lean settings applied: on (~/.claude/settings.json)" }
-    } catch {}
-} else {
-    Write-Host "  $([char]0x2022) Lean mode disabled (claude --lean-on to re-enable)" -ForegroundColor DarkGray
-}
+try {
+    node -e $leanApplyScript "$claudeSettings" 2>$null
+    Write-OK "Lean settings applied (strictest): ~/.claude/settings.json"
+} catch {}
 
 # --- Sanity check: ensure user's Bun can load cli.original.cjs --------
 # Anthropic builds the native binary with a bleeding-edge Bun build (e.g.
@@ -801,6 +791,21 @@ $launcherContent = "@echo off`r`nif `"%~1`"==`"import`" (`r`n  if exist `"$impor
 # backed up -- this fork leaves the original command unpatched by design.
 $launcherContent | Set-Content (Join-Path $BinDir "clawgod.cmd") -Encoding Default
 Write-OK "Command 'clawgod' -> patched; 'claude' untouched"
+
+# Keep a copy of this installer so uninstall works without re-download:
+# README documents powershell -File "$env:USERPROFILE\.clawgod\install.ps1" -Uninstall.
+$selfPath = $MyInvocation.MyCommand.Path
+if ($selfPath -and (Test-Path $selfPath) -and
+    ([System.IO.Path]::GetFullPath($selfPath) -ne [System.IO.Path]::GetFullPath((Join-Path $ClawDir "install.ps1")))) {
+    Copy-Item -LiteralPath $selfPath -Destination (Join-Path $ClawDir "install.ps1") -Force -ErrorAction SilentlyContinue
+}
+if (-not (Test-Path (Join-Path $ClawDir "install.ps1"))) {
+    try {
+        [System.IO.File]::WriteAllText((Join-Path $ClawDir "install.ps1"),
+            (Invoke-RestMethod "https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1"),
+            (New-Object System.Text.UTF8Encoding $false))
+    } catch {}
+}
 
 # Clean up artifacts left by earlier installer versions that did replace claude.
 foreach ($leftover in @("claude.orig.cmd", "claude.orig.exe", "claude.cmd")) {

@@ -70,17 +70,9 @@ The first launch of `clawgod` creates `~/.clawgod/provider.json`, or `%USERPROFI
 
 For an OpenAI Chat Completions-compatible service, set `protocol` to `openai-chat` and enter the provider's `baseURL`, API key, and model name. If you use a Claude subscription login instead of API credentials, leave `provider.json` at its defaults — `clawgod` shares the existing login in `~/.claude.json`. Save the file and restart `clawgod`.
 
-### Update
-
-```bash
-clawgod update                    # pull the latest Claude Code release and re-patch
-clawgod update --version 2.1.180  # install a specific version
-clawgod update --no-upgrade       # re-patch the installed version
-```
-
 ### Uninstallation
 
-**macOS / Linux / WSL:** rerun the installer with `--uninstall`. **Windows:** rerun the installer with `-Uninstall`. This removes the `clawgod` launcher and the `~/.clawgod` runtime. Original `claude` is untouched by installation and needs no restoration.
+**macOS / Linux / WSL:** run `bash ~/.clawgod/install.sh --uninstall` (or rerun the installer with `--uninstall`). **Windows:** run `powershell -File "$env:USERPROFILE\.clawgod\install.ps1" -Uninstall` (or rerun the installer with `-Uninstall`). This removes the `clawgod` launcher and the `~/.clawgod` runtime, and leaves `~/.claude/settings.json` untouched — the deny entries Lean mode wrote stay in place; delete them by hand if you no longer want them. Original `claude` is untouched by installation and needs no restoration.
 
 ## Usage Limits and Security
 

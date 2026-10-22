@@ -9,12 +9,14 @@ const require = createRequire(import.meta.url);
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 const wrapper = read('./cli.cjs');
 const unix = read('../templates/install.sh');
-// Stay inside one shell single-quoted argument. Other node -e blocks (such
-// as version recovery) can start with the same fs import as the Lean scripts.
-const unixApply = unix.match(/node -e '\n([^']*)\n' "\$CLAUDE_SETTINGS" "\$LEAN_IS_MAX"/)?.[1];
-const unixRemove = unix.match(/node -e '\n(const fs=require\("fs"\),p=process.argv\[1\];[^']*)\n' "\$CLAUDE_SETTINGS"/)?.[1];
-assert.ok(unixApply, 'Lean apply script must be a single node -e argument');
-assert.ok(unixRemove, 'Lean removal script must be a single node -e argument');
+// install.sh applies the single strictest level through the installed
+// lean-mode.cjs; uninstall must NOT touch the shared settings.json.
+const unixApply = unix.match(/node -e '\n(const \{leanApply\}[^']*)\n' "\$HOME\/\.claude\/settings\.json" "\$CLAWGOD_DIR\/lean-mode\.cjs"/)?.[1];
+assert.ok(unixApply, 'install.sh must apply Lean via lean-mode.cjs');
+const uninstallBlock = unix.slice(unix.indexOf('if [ "$UNINSTALL" = "1" ]'), unix.indexOf('# ─── Prerequisites'));
+assert.ok(!uninstallBlock.includes('settings.json'), 'uninstall must not touch ~/.claude/settings.json');
+const winApply = read('../windows/lean-apply.cjs');
+assert.ok(winApply.includes('leanApply(process.argv[1])'), 'lean-apply must delegate to lean-mode.cjs');
 const home = fs.mkdtempSync(join(tmpdir(), 'clawgod-lean-test-'));
 const dir = join(home, '.clawgod');
 const settings = join(home, '.claude', 'settings.json');
@@ -53,69 +55,63 @@ function launch(args = [], env = {}) {
   return proc.env;
 }
 
-function checkMode(mode) {
-  const s = loadSettings();
-  assert.equal(s.disableRemoteControl, mode === 'max' ? true : undefined, mode);
-  assert.equal(s.disableBundledSkills, mode === 'max' ? true : undefined, mode);
-  assert.equal(s.disableWorkflows, mode === 'off' ? undefined : true, mode);
-  assert.equal(s.permissions.deny.includes('EnterPlanMode'), mode === 'max', mode);
-  assert.equal(s.permissions.deny.includes('CronCreate'), mode !== 'off', mode);
-  assert.equal(s.theme, 'dark');
-  assert.deepEqual(s.permissions.allow, ['Read']);
-  assert.ok(s.permissions.deny.includes('Bash(custom)'));
+const { leanApply, DENY, FLAGS } = require('./lean-mode.cjs');
+
+function checkStrict(s) {
+  for (const k of FLAGS) assert.equal(s[k], true, k);
+  for (const t of DENY) assert.ok(s.permissions.deny.includes(t), t);
 }
 
 try {
   fs.mkdirSync(join(home, '.claude'));
-  for (const [platform, apply, remove, maxArg] of [
-    ['Unix', unixApply, unixRemove, 'true'],
-    // PowerShell interpolates its Boolean as "True", not "true".
-    ['Windows', read('../windows/lean-apply.cjs'), read('../windows/lean-remove.cjs'), 'True'],
-  ]) {
-    const run = (code, arg) => runInNewContext(code, { require, process: { argv: ['node', settings, arg] } });
-    reset();
-    run(apply, 'false');
-    checkMode('on');
-    // Upgrade an existing default installation from before #186.
-    saveSettings({ ...loadSettings(), disableRemoteControl: true });
-    run(apply, 'false');
-    checkMode('on');
-    run(apply, maxArg);
-    checkMode('max');
-    run(apply, maxArg);
-    checkMode('max');
-    run(apply, 'false');
-    checkMode('on');
-    run(apply, maxArg);
-    run(remove);
-    checkMode('off');
-    console.log(`[lean.test] ${platform} install, legacy migration, max/on/off transitions ok`);
-  }
+
+  // Single strictest level: apply fills in everything managed, keeps the rest.
+  reset();
+  leanApply(settings);
+  let s = loadSettings();
+  checkStrict(s);
+  assert.equal(s.theme, 'dark');
+  assert.deepEqual(s.permissions.allow, ['Read']);
+  assert.ok(s.permissions.deny.includes('Bash(custom)'));
+  const once = fs.readFileSync(settings, 'utf8');
+  leanApply(settings);
+  assert.equal(fs.readFileSync(settings, 'utf8'), once, 'idempotent');
+
+  // Existing user values are never overwritten, only missing ones added.
+  reset();
+  saveSettings({ ...originalSettings, disableWorkflows: false,
+    permissions: { allow: ['Read'], deny: ['Bash(custom)', 'CronCreate'] } });
+  leanApply(settings);
+  s = loadSettings();
+  assert.equal(s.disableWorkflows, false, 'user value preserved');
+  assert.equal(s.disableRemoteControl, true, 'missing managed flag added');
+  console.log('[lean.test] single strictest level: fill-only, idempotent ok');
+
+  // node -e entry point (install.ps1 wrapper) reaches the same behavior.
+  reset();
+  runInNewContext(winApply, { require, process: { argv: ['node', settings] } });
+  checkStrict(loadSettings());
+  console.log('[lean.test] lean-apply wrapper ok');
 
   for (const baseURL of ['https://api.anthropic.com', 'https://example.invalid']) {
     reset();
     fs.writeFileSync(join(dir, 'provider.json'), JSON.stringify({ baseURL }));
-    // Default startup must not disable the feature-flag service.
-    assert.equal(launch()[trafficKey], undefined);
-    saveSettings({ ...loadSettings(), disableRemoteControl: true });
-    for (const mode of ['on', 'max', 'on', 'max', 'off', 'on']) {
-      launch([`--lean-${mode}`]);
-      checkMode(mode);
-      assert.equal(fs.existsSync(join(dir, '.lean-max')), mode === 'max');
-      assert.equal(fs.existsSync(join(dir, '.lean-disabled')), mode === 'off');
-      assert.equal(launch()[trafficKey], mode === 'max' ? '1' : undefined);
-      checkMode(mode); // A proxy launch must not silently undo max settings.
-      for (const explicit of ['1', '0', '']) {
-        assert.equal(launch([], { [trafficKey]: explicit })[trafficKey], explicit);
-      }
-      assert.equal(launch([], { DISABLE_TELEMETRY: '1' }).DISABLE_TELEMETRY, '1');
+    // Legacy toggle flags are accepted but no-op-ish: they re-apply strict.
+    for (const flag of ['--lean-on', '--lean-max', '--lean-off']) {
+      launch([flag]);
+      checkStrict(loadSettings());
+      assert.ok(!fs.existsSync(join(dir, '.lean-max')));
+      assert.ok(!fs.existsSync(join(dir, '.lean-disabled')));
     }
-    // Existing per-setting opt-outs keep the documented absent-only behavior.
-    saveSettings({ ...loadSettings(), disableRemoteControl: false });
-    launch(['--lean-max']);
-    assert.equal(loadSettings().disableRemoteControl, false);
+    // Lean is unconditional: traffic restriction is always on by default.
+    assert.equal(launch()[trafficKey], '1');
+    checkStrict(loadSettings()); // A proxy launch must not undo settings.
+    for (const explicit of ['1', '0', '']) {
+      assert.equal(launch([], { [trafficKey]: explicit })[trafficKey], explicit);
+    }
+    assert.equal(launch([], { DISABLE_TELEMETRY: '1' }).DISABLE_TELEMETRY, '1');
   }
-  console.log('[lean.test] launcher modes, provider parity, and explicit environment settings ok');
+  console.log('[lean.test] launcher flags, provider parity, and explicit environment settings ok');
 } finally {
   fs.rmSync(home, { recursive: true, force: true });
 }
