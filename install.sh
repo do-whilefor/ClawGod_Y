@@ -8988,6 +8988,7 @@ export const PENTEST_AST_PATCH_IDS = [
   'security-bundled-skills', 'security-builtin-plugins', 'security-tool-startup',
   'security-cron-off', 'security-remote-control-off', 'security-voice-off',
   'security-brief-off', 'security-cowork-off',
+  'security-warnings-off',
   'cli-header-label',
   'pentest-prompt-rewrite',
 ];
@@ -9085,6 +9086,7 @@ export const PENTEST_ANCHORS = [
   'clawgod:permission-',
   'tengu_settings_bypass_unconsented_noninteractive_ignored', 'skipDangerousModePermissionPrompt',
   'Bypass permissions mode was disabled by settings', 'refuseBypassUnderRoot',
+  'check for typos', 'unknownModelWindowWarning', 'isn\'t recognized',
   'Handoff classifier request refused by the safety safeguard', 'isBypassPermissionsModeAvailable',
   'trustAccepted', 'hasTrustDialogAccepted',
   'https://api.anthropic.com/api/web/domain_info?domain=', 'isolationLatch',
@@ -9284,7 +9286,19 @@ function scanPermissionBypasses(tree, code, results, edit) {
         '--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons')) &&
         contains(node.body, child => child.type === 'CallExpression' && member(child.callee, 'exit') &&
           child.callee.object.name === 'process')) {
-      replace('permission-confirmations-off', node, '');
+      replace('permission-confirmations-off', node, 'return;');
+      return false;
+    }
+    // Root/sudo refusal gate: a predicate consulted before bypass mode is
+    // accepted (e.g. refuseBypassUnderRoot / isBypassPermissionsModeAvailable
+    // helpers). Match any sync function whose body mentions
+    // `refuseBypassUnderRoot` together with a process-identity probe
+    // (getuid/geteuid or uid === 0) and force it to report "not root".
+    if (!node.async && contains(node.body, child => literal(child, 'refuseBypassUnderRoot')) &&
+        contains(node.body, child => child.type === 'CallExpression' &&
+          child.callee.type === 'MemberExpression' &&
+          ['getuid', 'geteuid'].includes(child.callee.property?.name ?? child.callee.property?.value))) {
+      replace('permission-confirmations-off', node, 'return!1;');
       return false;
     }
     if (!node.async && params.length === 0 && contains(node.body, child => member(child, 'trustAccepted'))) {
@@ -9854,6 +9868,55 @@ function scanPromptRewrites(tree, code, results, edit, permissionBodies) {
   });
 }
 
+// ─── Startup warning suppression ─────────────────────────────────────────
+// The pentest build strips tools and runs custom models, but upstream still
+// surfaces cosmetic startup warnings for both: "Deny rule X matches no tool ·
+// check for typos" (the deny rules name tools this build removed on purpose)
+// and `Model "…" isn't recognized · context assumed to be 200k tokens` (the
+// configured model is not in Anthropic's catalog). The warnings are pure
+// noise — the rules still deny, the model still runs. Structural matches:
+//   1. setup-state object literals carrying both `unknownModelWindowWarning`
+//      and `securityWarnings` keys → force null / [].
+//   2. the permission-context builder's return
+//      `return{toolPermissionContext:…,warnings:A,securityWarnings:T,…}` →
+//      force `securityWarnings:[]`.
+//   3. the notice descriptor object `{id:"model-unrecognized",…}` → drop it.
+
+function scanWarningSuppression(tree, code, results, edit) {
+  const id = 'security-warnings-off';
+  const marker = `/*clawgod:${id}*/`;
+  if (code.includes(marker)) { results[id].patched = true; return; }
+  const keyOf = property => property.key?.type === 'Identifier' ? property.key.name
+    : property.key?.type === 'Literal' ? property.key.value : undefined;
+  walk(tree, (node, parent) => {
+    if (node.type === 'Property' && !node.computed) {
+      const key = keyOf(node);
+      if (key === 'unknownModelWindowWarning' && !(node.value.type === 'Literal' && node.value.value === null)) {
+        results[id].present = true;
+        edit(id, node.value, `${marker}null`);
+        return false;
+      }
+      if (key === 'securityWarnings' &&
+          !(node.value.type === 'ArrayExpression' && node.value.elements.length === 0)) {
+        results[id].present = true;
+        edit(id, node.value, `${marker}[]`);
+        return false;
+      }
+      return;
+    }
+    if (node.type === 'ObjectExpression') {
+      const idProp = node.properties.find(p => p.type === 'Property' && keyOf(p) === 'id');
+      if (idProp && literal(idProp.value, 'model-unrecognized') &&
+          node.properties.some(p => p.type === 'Property' && keyOf(p) === 'render')) {
+        results[id].present = true;
+        const replacement = parent?.type === 'ArrayExpression' ? `...[]${marker}` : `null${marker}`;
+        edit(id, node, replacement);
+        return false;
+      }
+    }
+  });
+}
+
 // ─── Top-level scanner (mirrors upstream scanAstPatches contract) ─────────
 // Returns { [id]: { matches: [{start,end,replacement}], present, patched } }
 // for every id in PENTEST_AST_PATCH_IDS. `present` drives the stale report:
@@ -9870,6 +9933,7 @@ export function scanPentestPatches(code) {
   scanRuntimeTrimming(tree, code, results, edit);
   const permissionBodies = scanPermissionBypasses(tree, code, results, edit);
   scanPromptRewrites(tree, code, results, edit, permissionBodies);
+  scanWarningSuppression(tree, code, results, edit);
   return results;
 }
 
@@ -11185,6 +11249,7 @@ const PENTEST_AST_META = {
   'security-voice-off': 'Disable voice mode',
   'security-brief-off': 'Disable Brief mode',
   'security-cowork-off': 'Disable Cowork-specific startup',
+  'security-warnings-off': 'Suppress startup warnings for removed tools and unrecognized models',
   'cli-header-label': 'Startup header → Claude Code_Y',
   'pentest-prompt-rewrite': 'Strip client-side safety prompts and reword identity to authorized pentest context',
 };
