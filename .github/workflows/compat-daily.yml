@@ -330,24 +330,18 @@ jobs:
       - name: Verify lean-off / lean-on toggle
         shell: bash
         run: |
-          # --lean-off should remove lean keys and create flag
+          # ClawGod_Y reduced Lean to a single strictest level: --lean-off,
+          # --lean-on and --lean-max are accepted as no-ops so legacy scripts
+          # don't fail, and ~/.clawgod/.lean-disabled is removed if present.
+          # The upstream toggle test (lean-off removes keys, lean-on restores
+          # them) contradicts that design and was dropped.
           bash install.sh --no-upgrade --lean-off 2>&1 | tail -3
-          [[ -f "$HOME/.clawgod/.lean-disabled" ]] || { echo "::error::.lean-disabled flag not created"; exit 1; }
+          [[ ! -f "$HOME/.clawgod/.lean-disabled" ]] || { echo "::error::legacy .lean-disabled flag left behind"; exit 1; }
           settings="$HOME/.claude/settings.json"
-          if grep -q '"disableWorkflows"' "$settings"; then
-            echo "::error::lean-off failed to remove disableWorkflows"
-            cat "$settings"
-            exit 1
-          fi
-          # --lean-on should restore
+          grep -q '"disableWorkflows"' "$settings" || { echo "::error::lean settings lost after --lean-off (should be a no-op)"; exit 1; }
           bash install.sh --no-upgrade --lean-on 2>&1 | tail -3
-          [[ ! -f "$HOME/.clawgod/.lean-disabled" ]] || { echo "::error::.lean-disabled flag not removed"; exit 1; }
-          if ! grep -q '"disableWorkflows"' "$settings"; then
-            echo "::error::lean-on failed to restore disableWorkflows"
-            cat "$settings"
-            exit 1
-          fi
-          echo "Lean toggle verified"
+          grep -q '"disableWorkflows"' "$settings" || { echo "::error::lean settings lost after --lean-on (should be a no-op)"; exit 1; }
+          echo "Lean no-op toggle verified"
 
       - name: Smoke test — clawgod --version
         timeout-minutes: 1
