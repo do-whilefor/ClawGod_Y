@@ -299,44 +299,45 @@ jobs:
       - name: Verify lean settings applied
         shell: bash
         run: |
-          settings="$HOME/.claude/settings.json"
-          [[ -f "$settings" ]] || { echo "::error::~/.claude/settings.json not created"; exit 1; }
-          # Check that lean keys are present
-          for key in disableWorkflows disableClaudeAiConnectors disableArtifact; do
-            if ! grep -q "\"$key\"" "$settings"; then
-              echo "::error::lean key $key missing from settings.json"
-              cat "$settings"
+          # Lean entries live in the clawgod-scoped file passed via --settings;
+          # the shared ~/.claude/settings.json is only cleaned of legacy
+          # entries, never written. Verify the scoped file carries the managed
+          # set, and that the shared file was NOT touched.
+          scoped="$HOME/.clawgod/lean-settings.json"
+          [[ -f "$scoped" ]] || { echo "::error::~/.clawgod/lean-settings.json not created"; exit 1; }
+          for key in disableWorkflows disableClaudeAiConnectors disableArtifact disableRemoteControl; do
+            if ! grep -q "\"$key\"" "$scoped"; then
+              echo "::error::lean key $key missing from lean-settings.json"
+              cat "$scoped"
               exit 1
             fi
           done
-          # ClawGod_Y is a pentest fork: Lean intentionally sets disableRemoteControl=true
-          # (paired with the security-remote-control-off patch). The upstream assertion
-          # "default Lean must allow Remote Control" was inherited from the office-oriented
-          # fork and contradicts this build's goals — drop it.
           for tool in DesignSync NotebookEdit CronCreate; do
-            if ! grep -q "\"$tool\"" "$settings"; then
-              echo "::error::deny tool $tool missing from settings.json"
-              cat "$settings"
+            if ! grep -q "\"$tool\"" "$scoped"; then
+              echo "::error::deny tool $tool missing from lean-settings.json"
+              cat "$scoped"
               exit 1
             fi
           done
+          if [[ -f "$HOME/.claude/settings.json" ]] && grep -q '"disableWorkflows"' "$HOME/.claude/settings.json"; then
+            echo "::error::shared settings.json must not carry lean keys"
+            cat "$HOME/.claude/settings.json"
+            exit 1
+          fi
           echo "Lean settings verified:"
-          cat "$settings"
+          cat "$scoped"
 
       - name: Verify lean-off / lean-on toggle
         shell: bash
         run: |
-          # ClawGod_Y reduced Lean to a single strictest level: --lean-off,
-          # --lean-on and --lean-max are accepted as no-ops so legacy scripts
-          # don't fail, and ~/.clawgod/.lean-disabled is removed if present.
-          # The upstream toggle test (lean-off removes keys, lean-on restores
-          # them) contradicts that design and was dropped.
+          # --lean-off/--lean-on/--lean-max are accepted as no-ops so legacy
+          # scripts don't fail; the scoped lean file is re-applied either way.
           bash install.sh --no-upgrade --lean-off 2>&1 | tail -3
           [[ ! -f "$HOME/.clawgod/.lean-disabled" ]] || { echo "::error::legacy .lean-disabled flag left behind"; exit 1; }
-          settings="$HOME/.claude/settings.json"
-          grep -q '"disableWorkflows"' "$settings" || { echo "::error::lean settings lost after --lean-off (should be a no-op)"; exit 1; }
+          scoped="$HOME/.clawgod/lean-settings.json"
+          grep -q '"disableWorkflows"' "$scoped" || { echo "::error::lean settings lost after --lean-off (should be a no-op)"; exit 1; }
           bash install.sh --no-upgrade --lean-on 2>&1 | tail -3
-          grep -q '"disableWorkflows"' "$settings" || { echo "::error::lean settings lost after --lean-on (should be a no-op)"; exit 1; }
+          grep -q '"disableWorkflows"' "$scoped" || { echo "::error::lean settings lost after --lean-on (should be a no-op)"; exit 1; }
           echo "Lean no-op toggle verified"
 
       - name: Smoke test — clawgod --version
