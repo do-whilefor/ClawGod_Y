@@ -164,7 +164,7 @@ if (_realExecPath !== process.execPath) {
 // lean-settings.json (passed via --settings below); the shared
 // ~/.claude/settings.json is only cleaned of entries older builds wrote.
 if (process.argv.includes('--lean-off') || process.argv.includes('--lean-on') || process.argv.includes('--lean-max')) {
-  require('./lean-mode.cjs').leanApply(join(clawgodDir, 'lean-settings.json'), join(homedir(), '.claude', 'settings.json'));
+  require('./lean-mode.cjs').leanApply(join(clawgodDir, 'lean-settings.json'), join(homedir(), '.claude', 'settings.json'), join(clawgodDir, 'patches.json'));
   try { require('fs').unlinkSync(join(clawgodDir, '.lean-disabled')); } catch {}
   try { require('fs').unlinkSync(join(clawgodDir, '.lean-max')); } catch {}
   process.stderr.write('[clawgod] Lean is a single strictest level; it is applied on install and cannot be toggled off. Edit ~/.clawgod/lean-settings.json directly to change it.\n');
@@ -263,7 +263,7 @@ require('./bun-ant-shim.cjs');
 const leanSettings = join(clawgodDir, 'lean-settings.json');
 if (!versionOnly) {
   if (!existsSync(leanSettings)) {
-    try { require('./lean-mode.cjs').leanApply(leanSettings); } catch {}
+    try { require('./lean-mode.cjs').leanApply(leanSettings, undefined, join(clawgodDir, 'patches.json')); } catch {}
   }
   if (existsSync(leanSettings) &&
       !process.argv.some(a => a === '--settings' || a.startsWith('--settings='))) {

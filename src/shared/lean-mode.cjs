@@ -10,6 +10,11 @@
 // denied: the first two are the IPC channels agent-teams subagents use,
 // ScheduleWakeup drives autonomous-loop wakeups, and ReportFindings is the
 // reporting channel of the bundled code-review skill.
+//
+// Pentest builds additionally lock every upstream toggleable feature ON by
+// writing them into ~/.clawgod/patches.json (which feature-gates.cjs reads
+// before cli.original.cjs loads). The user can still edit the file, but the
+// default for a fresh install is "everything on, always".
 
 const DENY = ["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","CronCreate","CronDelete","CronList","EnterPlanMode","ExitPlanMode","Projects"];
 const FLAGS = ["disableWorkflows","disableClaudeAiConnectors","disableArtifact","disableBundledSkills","disableRemoteControl"];
@@ -23,7 +28,21 @@ const SETTINGS = { sandbox: { enabled: false, autoAllowBashIfSandboxed: false, f
 // ReportFindings). Cleanup removes exactly these and the FLAGS above.
 const LEGACY_SHARED_DENY = [...new Set([...DENY, "ScheduleWakeup", "ReportFindings"])];
 
-function leanApply(clawgodSettingsPath, sharedSettingsPath) {
+// Upstream toggleable features locked ON for a pentest install. Keys are
+// feature ids from patch.mjs's FEATURES registry. Locking happens via
+// patches.json, not via a new patch.mjs hook, so the upstream file remains
+// untouched and merge surface stays at the existing 4 hooks.
+const FEATURES_LOCKED_ON = {
+  'agent-teams': true,
+  'computer-use': true,
+  'ultraplan': true,
+  'ultrareview': true,
+  'remote-settings-off': true,
+  'wiggly-dove': true,
+  'bun-ant-shim': true,
+};
+
+function leanApply(clawgodSettingsPath, sharedSettingsPath, patchesJsonPath) {
   const fs = require("fs");
   let s = {};
   try { s = JSON.parse(fs.readFileSync(clawgodSettingsPath, "utf8")); } catch {}
@@ -42,6 +61,23 @@ function leanApply(clawgodSettingsPath, sharedSettingsPath) {
       fs.mkdirSync(require("path").dirname(clawgodSettingsPath), { recursive: true });
       fs.writeFileSync(clawgodSettingsPath, JSON.stringify(s, null, 2) + "\n");
     } catch {}
+  }
+  // Pentest: lock upstream toggleable features ON via patches.json. Existing
+  // user-edited keys are preserved; we only fill in missing ones.
+  if (patchesJsonPath) {
+    let p = {};
+    try { p = JSON.parse(fs.readFileSync(patchesJsonPath, "utf8")); } catch {}
+    if (typeof p !== "object" || !p) p = {};
+    let pchanged = false;
+    for (const [k, v] of Object.entries(FEATURES_LOCKED_ON)) {
+      if (!(k in p)) { p[k] = v; pchanged = true; }
+    }
+    if (pchanged) {
+      try {
+        fs.mkdirSync(require("path").dirname(patchesJsonPath), { recursive: true });
+        fs.writeFileSync(patchesJsonPath, JSON.stringify(p, null, 2) + "\n");
+      } catch {}
+    }
   }
   // Shared file: remove what this fork ever managed, write nothing.
   if (sharedSettingsPath) {
@@ -62,4 +98,4 @@ function leanApply(clawgodSettingsPath, sharedSettingsPath) {
   }
 }
 
-module.exports = { leanApply, DENY, FLAGS, SETTINGS, LEGACY_SHARED_DENY };
+module.exports = { leanApply, DENY, FLAGS, SETTINGS, LEGACY_SHARED_DENY, FEATURES_LOCKED_ON };
