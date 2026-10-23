@@ -5,23 +5,12 @@ const { homedir } = require('os');
 const { spawnSync } = require('child_process');
 
 const clawgodDir = join(homedir(), '.clawgod');
-// Version queries (including installer verification) must not start provider
-// servers or background update requests that keep the process alive (#203).
-// Match only a standalone flag, never a prompt/subcommand containing it.
+// Standalone --version / -v skips provider setup and background update checks.
 const versionOnly = process.argv.length === 3 && ['--version', '-v'].includes(process.argv[2]);
 
-// Note: there used to be a "drift detection" block here that scanned
-// ~/.local/share/claude/versions/ for a newer binary and silently re-patched.
-// Retained native versions (including on Windows) may be older than the
-// version our installer pulled from npm. Scanning them could roll back a
-// fresh install and cause a re-patch loop. Upgrades instead go through the
-// patched `claude update` redirect; native background updates are disabled
-// below so they cannot restore an official launcher over ours.
-
-// One-time migration: earlier wrapper versions set CLAUDE_CONFIG_DIR=~/.clawgod,
+// One-time migration: earlier wrappers set CLAUDE_CONFIG_DIR=~/.clawgod,
 // which made Claude Code read/write ~/.clawgod/.claude.json instead of the
-// native ~/.claude.json (the file holding MCP config, project history, session
-// index). Move it back transparently on first run after upgrade.
+// native ~/.claude.json. Move it back transparently on first run.
 const nativeClaudeJson = join(homedir(), '.claude.json');
 const strayClaudeJson = join(clawgodDir, '.claude.json');
 if (!versionOnly && existsSync(strayClaudeJson) && !existsSync(nativeClaudeJson)) {
@@ -132,20 +121,19 @@ if (config.effort) {
 if (config.timeoutMs) {
   process.env.API_TIMEOUT_MS ??= String(config.timeoutMs);
 }
-// Lean mode is a single strictest level applied on install (see
-// lean-mode.cjs), so nonessential traffic is always restricted. Explicit
-// user environment settings still take precedence. Legacy .lean-disabled /
-// .lean-max markers from the three-level scheme are cleaned up here.
+// Lean mode is a single strictest level applied on install; explicit env
+// settings still take precedence.
 process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC ??= '1';
 try { require('fs').unlinkSync(join(clawgodDir, '.lean-disabled')); } catch {}
 try { require('fs').unlinkSync(join(clawgodDir, '.lean-max')); } catch {}
 process.env.DISABLE_INSTALLATION_CHECKS ??= '1';
-// Updates belong to clawgod's `claude update` redirect. The native background
-// updater can repair a missing Windows claude.exe even at the same version,
-// shadowing our claude.cmd. Keep it disabled for every clawgod process (#200).
+// The native background updater can repair a missing Windows claude.exe even
+// at the same version, shadowing our claude.cmd. Keep it disabled.
 process.env.DISABLE_AUTOUPDATER = '1';
-// Use system ripgrep (extracted vendor rg path was build-time-baked; system
-// rg is the most reliable fallback under Bun runtime).
+// Advisor (separate review-model passes) is an office feature: extra API
+// round-trips and hedging on every response. Kill switch is upstream's own.
+process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL ??= '1';
+// System ripgrep is the most reliable fallback under the Bun runtime.
 process.env.USE_BUILTIN_RIPGREP ??= '1';
 
 const featuresFile = join(providerDir, 'features.json');
@@ -157,12 +145,11 @@ if (!process.env.CLAUDE_INTERNAL_FC_OVERRIDES && existsSync(featuresFile)) {
   } catch {}
 }
 
-// Monkey-patch process.execPath: Anthropic's CLI uses process.execPath to
-// locate the native binary for shell wrappers (find→bfs, grep→ugrep, rg) and
-// subprocess spawning. Under Bun, process.execPath returns the Bun runtime
-// path, not the Claude native binary. The launcher script sets
-// CLAUDE_CODE_EXECPATH to claude.orig (the real native binary) before exec'ing
-// Bun, so we use that as the source of truth.  See issue #100.
+// Monkey-patch process.execPath: Anthropic's CLI uses it to locate the
+// native binary for shell wrappers and subprocess spawning. Under Bun,
+// process.execPath returns the Bun runtime path, not the Claude native
+// binary. The launcher sets CLAUDE_CODE_EXECPATH to claude.orig before
+// exec'ing Bun, so we use that as the source of truth.
 const _realExecPath = process.env.CLAUDE_CODE_EXECPATH || process.execPath;
 if (_realExecPath !== process.execPath) {
   Object.defineProperty(process, 'execPath', {
@@ -173,19 +160,20 @@ if (_realExecPath !== process.execPath) {
 
 // Lean mode is no longer toggleable: installed means strictest. Accept the
 // legacy flags so old scripts and muscle memory do not fail; they all just
-// (re)apply the single level.
+// (re)apply the single level. The managed entries land in the clawgod-scoped
+// lean-settings.json (passed via --settings below); the shared
+// ~/.claude/settings.json is only cleaned of entries older builds wrote.
 if (process.argv.includes('--lean-off') || process.argv.includes('--lean-on') || process.argv.includes('--lean-max')) {
-  require('./lean-mode.cjs').leanApply(join(homedir(), '.claude', 'settings.json'));
+  require('./lean-mode.cjs').leanApply(join(clawgodDir, 'lean-settings.json'), join(homedir(), '.claude', 'settings.json'));
   try { require('fs').unlinkSync(join(clawgodDir, '.lean-disabled')); } catch {}
   try { require('fs').unlinkSync(join(clawgodDir, '.lean-max')); } catch {}
-  process.stderr.write('[clawgod] Lean is a single strictest level; it is applied on install and cannot be toggled off. Edit ~/.claude/settings.json directly to change it.\n');
+  process.stderr.write('[clawgod] Lean is a single strictest level; it is applied on install and cannot be toggled off. Edit ~/.clawgod/lean-settings.json directly to change it.\n');
   process.exit(0);
 }
 
 // Update check — cached, non-blocking, 24h interval. The version is checked
-// against this fork's own releases (the same repo `clawgod update` pulls the
-// installer from), not upstream 0Chencc/clawgod: upstream tags do not predict
-// what the fork installer will build.
+// against this fork's own releases, not upstream: upstream tags do not
+// predict what the fork installer will build.
 try {
   const _ucFile = join(clawgodDir, '.update-check');
   const _verFile = join(clawgodDir, '.clawgod-version');
@@ -267,5 +255,20 @@ require('./runtime-helpers.cjs');
 // re-implements the API in JS. No-op when the real API exists or when the
 // bun-ant-shim feature is off (patches.json / CLAWGOD_FEATURE_BUN_ANT_SHIM).
 require('./bun-ant-shim.cjs');
+
+// Lean mode's managed flag/deny set rides a clawgod-owned settings file
+// passed via --settings (a separate flagSettings source merged on top of the
+// user's own settings), so vanilla claude never sees these entries.
+// Self-heal if missing; a user-supplied --settings always wins.
+const leanSettings = join(clawgodDir, 'lean-settings.json');
+if (!versionOnly) {
+  if (!existsSync(leanSettings)) {
+    try { require('./lean-mode.cjs').leanApply(leanSettings); } catch {}
+  }
+  if (existsSync(leanSettings) &&
+      !process.argv.some(a => a === '--settings' || a.startsWith('--settings='))) {
+    process.argv.push('--settings', leanSettings);
+  }
+}
 
 require('./cli.original.cjs');

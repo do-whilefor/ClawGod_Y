@@ -9,5 +9,14 @@
   "tengu_malort_pedway": {"enabled": true},
   "tengu_amber_quartz_disabled": true,
   "tengu_prompt_cache_1h_config": {"allowlist": ["*"]},
-  "tengu_amber_redwood3": "enabled"
+  "tengu_amber_redwood3": "enabled",
+  "tengu_c4e_slash_upsell": false,
+  "tengu_chrome_auto_enable": false,
+  "tengu_chrome_install_upsell": false,
+  "tengu_cowork_chrome_automode_default": false,
+  "tengu_kairos_brief": false,
+  "tengu_violin_tip": false,
+  "tengu_vscode_feedback_survey": false,
+  "tengu_vscode_onboarding": false,
+  "tengu_vscode_review_upsell": false
 }

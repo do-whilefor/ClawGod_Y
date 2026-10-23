@@ -65,7 +65,7 @@ if ($Uninstall) {
         if (Test-Path $p) { Remove-Item -Force $p }
     }
 
-    foreach ($f in @("cli.js","cli.cjs","cli.original.js","cli.original.cjs","cli.original.js.bak","cli.original.cjs.bak","source-backup.json","patch.js","patch.mjs","ast-patches.mjs","pentest-patches.mjs","lean-mode.cjs","lean-state.json",".lean-disabled",".lean-max","acorn.mjs","acorn.LICENSE","extract-natives.mjs","post-process.mjs","repatch.mjs","startup-check.cjs","startup-check.log","openai-proxy.cjs","feature-gates.cjs","runtime-helpers.cjs","bun-ant-shim.cjs","clawgod-import.exe","claude.staged.exe","claude.fallback.exe",".source-version","node_modules","bun-runtime","vendor","bunfs","pathmap.json")) {
+    foreach ($f in @("cli.js","cli.cjs","cli.original.js","cli.original.cjs","cli.original.js.bak","cli.original.cjs.bak","source-backup.json","patch.js","patch.mjs","ast-patches.mjs","pentest-patches.mjs","lean-mode.cjs","lean-settings.json","lean-state.json",".lean-disabled",".lean-max","acorn.mjs","acorn.LICENSE","extract-natives.mjs","post-process.mjs","repatch.mjs","startup-check.cjs","startup-check.log","openai-proxy.cjs","feature-gates.cjs","runtime-helpers.cjs","bun-ant-shim.cjs","clawgod-import.exe","claude.staged.exe","claude.fallback.exe",".source-version","node_modules","bun-runtime","vendor","bunfs","pathmap.json")) {
         $p = Join-Path $ClawDir $f
         if (Test-Path $p) { Remove-Item -Recurse -Force $p }
     }
@@ -626,12 +626,15 @@ if (-not (Test-Path $patchesFile)) {
     Write-OK "Default patches.json created (all features on)"
 }
 
-# --- Lean mode: optimize ~/.claude/settings.json ----------------------
-# A single strictest level, applied unconditionally on install. There is no
-# off/on/max toggle and no uninstall-time undo: the managed entries are plain
-# settings the user can edit or delete by hand afterwards.
+# --- Lean mode: clawgod-scoped settings file ---------------------------
+# A single strictest level, applied unconditionally on install. The managed
+# entries live in ~\.clawgod\lean-settings.json, which the launcher passes
+# via --settings; the shared ~\.claude\settings.json is only cleaned of
+# entries older builds wrote there, never written. Removing ~\.clawgod
+# (uninstall) takes the scoped file with it.
 $claudeSettingsDir = Join-Path $env:USERPROFILE ".claude"
 $claudeSettings = Join-Path $claudeSettingsDir "settings.json"
+$leanSettings = Join-Path $ClawDir "lean-settings.json"
 New-Item -ItemType Directory -Force -Path $claudeSettingsDir | Out-Null
 
 # Legacy flags/markers from the three-level scheme are accepted as no-ops so
@@ -648,8 +651,8 @@ $leanApplyScript = @'
 {{CLAWGOD:lean-apply.cjs}}
 '@
 try {
-    node -e $leanApplyScript "$claudeSettings" 2>$null
-    Write-OK "Lean settings applied (strictest): ~/.claude/settings.json"
+    node -e $leanApplyScript "$leanSettings" "$claudeSettings" 2>$null
+    Write-OK "Lean settings applied (strictest, clawgod-scoped): ~\.clawgod\lean-settings.json"
 } catch {}
 
 # --- Sanity check: ensure user's Bun can load cli.original.cjs --------

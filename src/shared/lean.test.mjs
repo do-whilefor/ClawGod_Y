@@ -10,19 +10,26 @@ const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 const wrapper = read('./cli.cjs');
 const unix = read('../templates/install.sh');
 // install.sh applies the single strictest level through the installed
-// lean-mode.cjs; uninstall must NOT touch the shared settings.json.
-const unixApply = unix.match(/node -e '\n(const \{leanApply\}[^']*)\n' "\$HOME\/\.claude\/settings\.json" "\$CLAWGOD_DIR\/lean-mode\.cjs"/)?.[1];
-assert.ok(unixApply, 'install.sh must apply Lean via lean-mode.cjs');
+// lean-mode.cjs: the managed set lands in the clawgod-scoped
+// lean-settings.json and the shared settings.json is only cleaned.
+// Uninstall must NOT touch the shared settings.json.
+const unixApply = unix.match(/node -e '\n(const \{leanApply\}[^']*)\n' "\$CLAWGOD_DIR\/lean-settings\.json" "\$HOME\/\.claude\/settings\.json" "\$CLAWGOD_DIR\/lean-mode\.cjs"/)?.[1];
+assert.ok(unixApply, 'install.sh must apply Lean via lean-mode.cjs into the clawgod-scoped file');
 const uninstallBlock = unix.slice(unix.indexOf('if [ "$UNINSTALL" = "1" ]'), unix.indexOf('# ─── Prerequisites'));
-assert.ok(!uninstallBlock.includes('settings.json'), 'uninstall must not touch ~/.claude/settings.json');
+assert.ok(!uninstallBlock.replace(/lean-settings\.json/g, '').includes('settings.json'), 'uninstall must not touch ~/.claude/settings.json');
 const winApply = read('../windows/lean-apply.cjs');
-assert.ok(winApply.includes('leanApply(process.argv[1])'), 'lean-apply must delegate to lean-mode.cjs');
+assert.ok(winApply.includes('leanApply(process.argv[1], process.argv[2])'), 'lean-apply must delegate both paths to lean-mode.cjs');
 const home = fs.mkdtempSync(join(tmpdir(), 'clawgod-lean-test-'));
 const dir = join(home, '.clawgod');
 const settings = join(home, '.claude', 'settings.json');
+const leanSettings = join(dir, 'lean-settings.json');
 const trafficKey = 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC';
-const originalSettings = { theme: 'dark', permissions: { allow: ['Read'], deny: ['Bash(custom)'] } };
+// Shared settings as an older clawgod build left them: legacy managed deny
+// entries plus a legacy managed flag, alongside the user's own entries.
+const originalSettings = { theme: 'dark', disableWorkflows: true,
+  permissions: { allow: ['Read'], deny: ['Bash(custom)', 'CronCreate', 'ScheduleWakeup'] } };
 const loadSettings = () => JSON.parse(fs.readFileSync(settings, 'utf8'));
+const loadLean = () => JSON.parse(fs.readFileSync(leanSettings, 'utf8'));
 const saveSettings = s => fs.writeFileSync(settings, JSON.stringify(s));
 
 function reset() {
@@ -33,7 +40,7 @@ function reset() {
 
 // Execute the entire launcher with only HOME and its final bundle replaced.
 // No credentials, user settings, network, or Claude installation are needed.
-function launch(args = [], env = {}) {
+function launch(args = [], env = {}, expectLoaded = args.length === 0) {
   const exit = Symbol('exit');
   let loaded = false;
   const proc = { argv: ['node', 'cli.cjs', ...args], env: { ...env }, execPath: '/test/bun',
@@ -51,46 +58,59 @@ function launch(args = [], env = {}) {
   } catch (error) {
     if (error !== exit) throw error;
   }
-  assert.equal(loaded, args.length === 0);
-  return proc.env;
+  assert.equal(loaded, expectLoaded);
+  return proc;
 }
 
-const { leanApply, DENY, FLAGS } = require('./lean-mode.cjs');
+const { leanApply, DENY, FLAGS, SETTINGS, LEGACY_SHARED_DENY } = require('./lean-mode.cjs');
 
 function checkStrict(s) {
   for (const k of FLAGS) assert.equal(s[k], true, k);
+  for (const [k, v] of Object.entries(SETTINGS)) assert.deepEqual(s[k], v, k);
   for (const t of DENY) assert.ok(s.permissions.deny.includes(t), t);
 }
 
 try {
   fs.mkdirSync(join(home, '.claude'));
 
-  // Single strictest level: apply fills in everything managed, keeps the rest.
+  // Multi-agent plumbing is never denied: ScheduleWakeup drives autonomous
+  // loops and ReportFindings is the kept code-review skill's report channel.
+  assert.ok(!DENY.includes('ScheduleWakeup') && !DENY.includes('ReportFindings'));
+  assert.ok(DENY.includes('EnterPlanMode') && LEGACY_SHARED_DENY.includes('ScheduleWakeup'));
+
+  // Single strictest level: managed entries fill the clawgod-scoped file;
+  // the shared file is only cleaned of what this fork ever wrote there.
   reset();
-  leanApply(settings);
+  leanApply(leanSettings, settings);
+  checkStrict(loadLean());
   let s = loadSettings();
-  checkStrict(s);
   assert.equal(s.theme, 'dark');
   assert.deepEqual(s.permissions.allow, ['Read']);
   assert.ok(s.permissions.deny.includes('Bash(custom)'));
-  const once = fs.readFileSync(settings, 'utf8');
-  leanApply(settings);
-  assert.equal(fs.readFileSync(settings, 'utf8'), once, 'idempotent');
+  assert.ok(!s.permissions.deny.includes('CronCreate'), 'legacy managed deny removed from shared settings');
+  assert.ok(!s.permissions.deny.includes('ScheduleWakeup'), 'legacy multi-agent deny removed from shared settings');
+  assert.ok(!('disableWorkflows' in s), 'legacy managed flag removed from shared settings');
+  const onceLean = fs.readFileSync(leanSettings, 'utf8');
+  const onceShared = fs.readFileSync(settings, 'utf8');
+  leanApply(leanSettings, settings);
+  assert.equal(fs.readFileSync(leanSettings, 'utf8'), onceLean, 'lean file idempotent');
+  assert.equal(fs.readFileSync(settings, 'utf8'), onceShared, 'shared file untouched on re-apply');
 
-  // Existing user values are never overwritten, only missing ones added.
+  // Existing values in the clawgod-scoped file are never overwritten.
   reset();
-  saveSettings({ ...originalSettings, disableWorkflows: false,
-    permissions: { allow: ['Read'], deny: ['Bash(custom)', 'CronCreate'] } });
-  leanApply(settings);
-  s = loadSettings();
+  fs.writeFileSync(leanSettings, JSON.stringify({ disableWorkflows: false,
+    permissions: { allow: ['Read'], deny: ['CronCreate'] } }));
+  leanApply(leanSettings, settings);
+  s = loadLean();
   assert.equal(s.disableWorkflows, false, 'user value preserved');
   assert.equal(s.disableRemoteControl, true, 'missing managed flag added');
-  console.log('[lean.test] single strictest level: fill-only, idempotent ok');
+  console.log('[lean.test] single strictest level: clawgod-scoped, fill-only, idempotent ok');
 
   // node -e entry point (install.ps1 wrapper) reaches the same behavior.
   reset();
-  runInNewContext(winApply, { require, process: { argv: ['node', settings] } });
-  checkStrict(loadSettings());
+  runInNewContext(winApply, { require, process: { argv: ['node', leanSettings, settings] } });
+  checkStrict(loadLean());
+  assert.ok(!loadSettings().permissions.deny.includes('CronCreate'));
   console.log('[lean.test] lean-apply wrapper ok');
 
   for (const baseURL of ['https://api.anthropic.com', 'https://example.invalid']) {
@@ -99,19 +119,33 @@ try {
     // Legacy toggle flags are accepted but no-op-ish: they re-apply strict.
     for (const flag of ['--lean-on', '--lean-max', '--lean-off']) {
       launch([flag]);
-      checkStrict(loadSettings());
+      checkStrict(loadLean());
       assert.ok(!fs.existsSync(join(dir, '.lean-max')));
       assert.ok(!fs.existsSync(join(dir, '.lean-disabled')));
     }
     // Lean is unconditional: traffic restriction is always on by default.
-    assert.equal(launch()[trafficKey], '1');
-    checkStrict(loadSettings()); // A proxy launch must not undo settings.
+    assert.equal(launch().env[trafficKey], '1');
+    checkStrict(loadLean()); // A proxy launch must not undo settings.
     for (const explicit of ['1', '0', '']) {
-      assert.equal(launch([], { [trafficKey]: explicit })[trafficKey], explicit);
+      assert.equal(launch([], { [trafficKey]: explicit }).env[trafficKey], explicit);
     }
-    assert.equal(launch([], { DISABLE_TELEMETRY: '1' }).DISABLE_TELEMETRY, '1');
+    assert.equal(launch([], { DISABLE_TELEMETRY: '1' }).env.DISABLE_TELEMETRY, '1');
   }
   console.log('[lean.test] launcher flags, provider parity, and explicit environment settings ok');
+
+  // The launcher registers the clawgod-scoped file via --settings, and a
+  // user-supplied --settings always wins over ours.
+  reset();
+  let proc = launch();
+  assert.ok(proc.argv.includes('--settings'), 'launcher must pass --settings');
+  assert.equal(proc.argv[proc.argv.indexOf('--settings') + 1], leanSettings);
+  assert.ok(fs.existsSync(leanSettings), 'missing lean file self-heals');
+  reset();
+  fs.writeFileSync(leanSettings, JSON.stringify({}));
+  proc = launch(['--settings', '/custom/my-settings.json'], {}, true);
+  assert.equal(proc.argv.filter(a => a === '--settings').length, 1, 'user --settings is not duplicated');
+  assert.ok(!proc.argv.includes(leanSettings), 'user --settings wins over the clawgod one');
+  console.log('[lean.test] --settings scoping and user override ok');
 } finally {
   fs.rmSync(home, { recursive: true, force: true });
 }

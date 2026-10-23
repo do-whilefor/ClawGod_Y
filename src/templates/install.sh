@@ -64,7 +64,7 @@ if [ "$UNINSTALL" = "1" ]; then
       info "Removed ClawGod launcher ($DIR/clawgod)"
     fi
   done
-  rm -rf "$CLAWGOD_DIR/node_modules" "$CLAWGOD_DIR/vendor" "$CLAWGOD_DIR/bun-runtime" "$CLAWGOD_DIR/cli.original.js" "$CLAWGOD_DIR/cli.original.js.bak" "$CLAWGOD_DIR/cli.original.cjs" "$CLAWGOD_DIR/cli.original.cjs.bak" "$CLAWGOD_DIR/source-backup.json" "$CLAWGOD_DIR/cli.js" "$CLAWGOD_DIR/cli.cjs" "$CLAWGOD_DIR/patch.mjs" "$CLAWGOD_DIR/ast-patches.mjs" "$CLAWGOD_DIR/pentest-patches.mjs" "$CLAWGOD_DIR/lean-mode.cjs" "$CLAWGOD_DIR/lean-state.json" "$CLAWGOD_DIR/.lean-disabled" "$CLAWGOD_DIR/.lean-max" "$CLAWGOD_DIR/acorn.mjs" "$CLAWGOD_DIR/acorn.LICENSE" "$CLAWGOD_DIR/patch.js" "$CLAWGOD_DIR/extract-natives.mjs" "$CLAWGOD_DIR/post-process.mjs" "$CLAWGOD_DIR/repatch.mjs" "$CLAWGOD_DIR/startup-check.cjs" "$CLAWGOD_DIR/startup-check.log" "$CLAWGOD_DIR/openai-proxy.cjs" "$CLAWGOD_DIR/feature-gates.cjs" "$CLAWGOD_DIR/runtime-helpers.cjs" "$CLAWGOD_DIR/bun-ant-shim.cjs" "$CLAWGOD_DIR/clawgod-import" "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback" "$CLAWGOD_DIR/.source-version"
+  rm -rf "$CLAWGOD_DIR/node_modules" "$CLAWGOD_DIR/vendor" "$CLAWGOD_DIR/bun-runtime" "$CLAWGOD_DIR/cli.original.js" "$CLAWGOD_DIR/cli.original.js.bak" "$CLAWGOD_DIR/cli.original.cjs" "$CLAWGOD_DIR/cli.original.cjs.bak" "$CLAWGOD_DIR/source-backup.json" "$CLAWGOD_DIR/cli.js" "$CLAWGOD_DIR/cli.cjs" "$CLAWGOD_DIR/patch.mjs" "$CLAWGOD_DIR/ast-patches.mjs" "$CLAWGOD_DIR/pentest-patches.mjs" "$CLAWGOD_DIR/lean-mode.cjs" "$CLAWGOD_DIR/lean-settings.json" "$CLAWGOD_DIR/lean-state.json" "$CLAWGOD_DIR/.lean-disabled" "$CLAWGOD_DIR/.lean-max" "$CLAWGOD_DIR/acorn.mjs" "$CLAWGOD_DIR/acorn.LICENSE" "$CLAWGOD_DIR/patch.js" "$CLAWGOD_DIR/extract-natives.mjs" "$CLAWGOD_DIR/post-process.mjs" "$CLAWGOD_DIR/repatch.mjs" "$CLAWGOD_DIR/startup-check.cjs" "$CLAWGOD_DIR/startup-check.log" "$CLAWGOD_DIR/openai-proxy.cjs" "$CLAWGOD_DIR/feature-gates.cjs" "$CLAWGOD_DIR/runtime-helpers.cjs" "$CLAWGOD_DIR/bun-ant-shim.cjs" "$CLAWGOD_DIR/clawgod-import" "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback" "$CLAWGOD_DIR/.source-version"
   hash -r 2>/dev/null
   info "ClawGod uninstalled"
   echo ""
@@ -513,10 +513,12 @@ if [ ! -f "$CLAWGOD_DIR/patches.json" ]; then
   info "Default patches.json created (all features on)"
 fi
 
-# ─── Lean mode: optimize ~/.claude/settings.json ─────
-# A single strictest level, applied unconditionally on install. There is no
-# off/on/max toggle and no uninstall-time undo: the managed entries are plain
-# settings the user can edit or delete by hand afterwards.
+# ─── Lean mode: clawgod-scoped settings file ──────────
+# A single strictest level, applied unconditionally on install. The managed
+# entries live in ~/.clawgod/lean-settings.json, which the launcher passes
+# via --settings; the shared ~/.claude/settings.json is only cleaned of
+# entries older builds wrote there, never written. Removing ~/.clawgod
+# (uninstall) takes the scoped file with it.
 
 # Legacy flags from the three-level scheme are accepted as no-ops so old
 # scripts do not fail.
@@ -526,10 +528,10 @@ fi
 rm -f "$CLAWGOD_DIR/.lean-disabled" "$CLAWGOD_DIR/.lean-max"
 
 node -e '
-const {leanApply}=require(process.argv[2]);
-try{leanApply(process.argv[1])}catch{}
-' "$HOME/.claude/settings.json" "$CLAWGOD_DIR/lean-mode.cjs" 2>/dev/null || true
-info "Lean settings applied (strictest): ~/.claude/settings.json"
+const {leanApply}=require(process.argv[3]);
+try{leanApply(process.argv[1],process.argv[2])}catch{}
+' "$CLAWGOD_DIR/lean-settings.json" "$HOME/.claude/settings.json" "$CLAWGOD_DIR/lean-mode.cjs" 2>/dev/null || true
+info "Lean settings applied (strictest, clawgod-scoped): ~/.clawgod/lean-settings.json"
 
 # ─── Sanity check: ensure user's Bun can actually load cli.original.cjs ──
 # Anthropic builds the native binary with a bleeding-edge Bun build (e.g.
