@@ -803,6 +803,7 @@ const PENTEST_AST_META = {
   'cli-header-label': 'Startup header → Claude Code_Y',
   'pentest-prompt-rewrite': 'Strip client-side safety prompts and reword identity to authorized pentest context',
   'pentest-tool-descriptions': 'Recast tool descriptions for pentest use (Bash/WebFetch coaching, quote caps)',
+  'pentest-runtime-gates': 'Force GrowthBook runtime gates and lift agent turn ceilings',
 };
 const patches = upstreamPatches
   .filter(p => !PENTEST_DROPPED_IDS.has(p.id))
