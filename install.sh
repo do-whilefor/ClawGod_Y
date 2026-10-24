@@ -1457,15 +1457,6 @@ const { homedir } = require('os');
 const { spawnSync } = require('child_process');
 
 const clawgodDir = join(homedir(), '.clawgod');
-// TEMP CI DEBUG — print uncaught error stacks to stderr so the ConPTY
-// artifact captures the failing chunk. Guarded: test harnesses evaluate
-// this file with a process mock. Revert with the fix.
-try {
-  if (typeof process.on === 'function') {
-    process.on('uncaughtException', function (e) { try { process.stderr.write('CGDEBUG-U ' + ((e && e.stack) || String(e)) + '\n'); } catch (_) {} });
-    process.on('unhandledRejection', function (e) { try { process.stderr.write('CGDEBUG-R ' + ((e && e.stack) || String(e)) + '\n'); } catch (_) {} });
-  }
-} catch (_) {}
 // Standalone --version / -v skips provider setup and background update checks.
 const versionOnly = process.argv.length === 3 && ['--version', '-v'].includes(process.argv[2]);
 
@@ -9037,6 +9028,25 @@ const contains = (root, predicate) => {
   return found;
 };
 
+// A function whose whole body is `return "<static text>"` — deny-message
+// builders, release notes, help pages. The content-anchored matchers
+// legitimately rewrite the SHORT ones (they ARE the deny path's text), but
+// long ones (2.1.310's changelog provider) merely QUOTE policy phrases
+// ("outside the working directory", "rewind"), and rewriting the same big
+// content function from two matchers trips the overlapping-edits guard.
+const staticTextOf = node => {
+  if (node?.type === 'Literal' && typeof node.value === 'string') return node.value;
+  if (node?.type === 'TemplateLiteral') return node.quasis.map(q => q.value.cooked ?? '').join('${}');
+  if (node?.type === 'BinaryExpression' && node.operator === '+')
+    return staticTextOf(node.left) + staticTextOf(node.right);
+  return null;
+};
+const longContentReturn = fn => {
+  if (fn.body.body.length !== 1 || fn.body.body[0].type !== 'ReturnStatement') return false;
+  const text = staticTextOf(fn.body.body[0].argument);
+  return text !== null && text.length >= 1000;
+};
+
 // Any string literal / template / concatenation whose first text chunk
 // starts with one of these is blanked.
 
@@ -9500,6 +9510,7 @@ function scanPermissionBypasses(tree, code, results, edit) {
     const params = node.params;
     const body = code.slice(node.body.start, node.body.end);
     if (body.includes('/*clawgod:permission-')) return false;
+    if (longContentReturn(node)) return false;
     if (node.async && node.generator && body.includes('PreToolUse hook dispatch failed')) {
       walk(node.body, child => {
         if (child.type !== 'IfStatement') return;
@@ -10114,6 +10125,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
   // drop any of these between releases — absence is not an install failure).
   walk(tree, node => {
     if (node.type !== 'FunctionDeclaration') return;
+    if (longContentReturn(node)) return;
     // security-update-off: silence startup version checks and auto-update.
     // Anchors must stay logic-specific: bare 'autoUpdate'/'updateAvailable'
     // also match the autoUpdates / autoUpdatesChannel / updateAvailable
