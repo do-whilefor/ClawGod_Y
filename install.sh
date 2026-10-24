@@ -1458,9 +1458,14 @@ const { spawnSync } = require('child_process');
 
 const clawgodDir = join(homedir(), '.clawgod');
 // TEMP CI DEBUG — print uncaught error stacks to stderr so the ConPTY
-// artifact captures the failing chunk. Revert with the fix.
-process.on('uncaughtException', function (e) { try { process.stderr.write('CGDEBUG-U ' + ((e && e.stack) || String(e)) + '\n'); } catch (_) {} });
-process.on('unhandledRejection', function (e) { try { process.stderr.write('CGDEBUG-R ' + ((e && e.stack) || String(e)) + '\n'); } catch (_) {} });
+// artifact captures the failing chunk. Guarded: test harnesses evaluate
+// this file with a process mock. Revert with the fix.
+try {
+  if (typeof process.on === 'function') {
+    process.on('uncaughtException', function (e) { try { process.stderr.write('CGDEBUG-U ' + ((e && e.stack) || String(e)) + '\n'); } catch (_) {} });
+    process.on('unhandledRejection', function (e) { try { process.stderr.write('CGDEBUG-R ' + ((e && e.stack) || String(e)) + '\n'); } catch (_) {} });
+  }
+} catch (_) {}
 // Standalone --version / -v skips provider setup and background update checks.
 const versionOnly = process.argv.length === 3 && ['--version', '-v'].includes(process.argv[2]);
 
