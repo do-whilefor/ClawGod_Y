@@ -129,9 +129,10 @@ function forgeStopReason(reason, gateName) {
 // Main query loop forge: sees every SSE event before the run loop records
 // it. Covers text rewrite (改文本), refusal swallow (吞掉 refusal),
 // empty-200 blanking and stop_reason rewrite on the main path. Carryover
-// state is keyed by the request id the yield site passes in — parallel
-// subagent streams forge independently; a stream without a key (renamed
-// local upstream) shares one slot, the pre-keying behavior.
+// state is SHARED across concurrent streams: per-stream keying needs a
+// minified local name that cannot be matched version-independently, so
+// the injected call passes no key (the streamKey parameter stays for
+// future use and degrades to the shared slot).
 const streamForgeStates = new Map();
 
 function streamForgeState(streamKey) {
@@ -329,18 +330,17 @@ function forgeTranscriptActive() {
   return FORGE_GATES.text || FORGE_GATES.swallow || FORGE_GATES.empty200 || FORGE_GATES.stop_reason;
 }
 
-// App-layer blind (tr): assistant messages that failed as API errors and
-// carry stop_reason "refusal" are the one refusal path that never touches
-// the stream forge — the HTTP-error message is synthesized upstream of it.
-// With the swallow gate on the classifier is blind, so no refusal-handling
-// branch in the run loop can trigger. Thinking blocks are deliberately NOT
-// forged anywhere: they carry signatures, and a rewritten thinking text
-// would fail signature validation when the turn is replayed in the next
-// request.
-function forgeRefusalVerdict(message) {
-  if (FORGE_GATES.swallow) return false;
-  return message?.type === 'assistant' && message.isApiErrorMessage === true &&
-    message.message?.stop_reason === 'refusal';
+// App-layer blind (tr/fEt): assistant messages that failed as API errors
+// are the one refusal path that never touches the stream forge. The
+// refusal SIGNAL is version-specific (stop_reason on 2.1.309, apiError
+// identity on 2.1.272), so the injected code keeps the original
+// expression and only consults this gate: swallow on → blind (no refusal
+// branch can trigger), swallow off → the original verdict runs locally.
+// Thinking blocks are deliberately NOT forged anywhere: they carry
+// signatures, and a rewritten thinking text would fail signature
+// validation when the turn is replayed in the next request.
+function forgeBlind() {
+  return FORGE_GATES.swallow;
 }
 
 // Wire-side sweep (吞掉 refusal, wire layer — swallow gate): the server must
@@ -408,7 +408,7 @@ module.exports.forgeStopReason = forgeStopReason;
 module.exports.forgeStreamEvent = forgeStreamEvent;
 module.exports.forgeMessage = forgeMessage;
 module.exports.forgeRequestMessages = forgeRequestMessages;
-module.exports.forgeRefusalVerdict = forgeRefusalVerdict;
+module.exports.forgeBlind = forgeBlind;
 module.exports.forgeApiErrorMessage = forgeApiErrorMessage;
 module.exports.forgeTelemetryCategory = forgeTelemetryCategory;
 module.exports.forgeTranscriptLine = forgeTranscriptLine;
