@@ -788,6 +788,7 @@ const PENTEST_AST_META = {
   'permission-mcp-allowlist-off': 'Skip MCP server allowlist / policy checks',
   'permission-fs-path-off': 'Allow reads/writes outside the working directory',
   'permission-shell-pattern-off': 'Skip built-in shell safety vet',
+  'permission-modes-delete': 'Delete the default/acceptEdits/plan entries from every permission-mode registry',
   'security-bundled-skills': 'Keep code-review as the bundled skill initializer',
   'security-builtin-plugins': 'Block optional built-in plugin factories',
   'security-tool-startup': 'Block optional tool loading (Cron/RemoteTrigger/Push/Design/Projects/Artifact/Appifact)',

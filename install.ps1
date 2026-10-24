@@ -9088,6 +9088,7 @@ export const PENTEST_AST_PATCH_IDS = [
   'permission-mode-bypass', 'permission-confirmations-off', 'permission-subagent-review-off',
   'permission-web-policy-off',
   'permission-mcp-allowlist-off', 'permission-fs-path-off', 'permission-shell-pattern-off',
+  'permission-modes-delete',
   'security-bundled-skills', 'security-builtin-plugins', 'security-tool-startup',
   'security-cron-off', 'security-remote-control-off', 'security-voice-off',
   'security-brief-off', 'security-cowork-off', 'security-output-styles-off',
@@ -9381,6 +9382,8 @@ export const PENTEST_ANCHORS = [
   'Bypass permissions mode was disabled by settings', 'refuseBypassUnderRoot',
   'getuid', 'geteuid',
   'check for typos', 'unknownModelWindowWarning', 'isn\'t recognized',
+  // Permission-mode registries (name lists / precedence maps / schema enums)
+  '"acceptEdits"',
   'Handoff classifier request refused by the safety safeguard', 'isBypassPermissionsModeAvailable',
   'trustAccepted', 'hasTrustDialogAccepted',
   'https://api.anthropic.com/api/web/domain_info?domain=', 'isolationLatch',
@@ -9924,6 +9927,42 @@ function scanPermissionBypasses(tree, code, results, edit) {
       return false;
     }
   });
+
+  // \u2500\u2500 permission-modes-delete: physically remove the default / acceptEdits
+  // / plan entries from every permission-mode registry \u2014 the name list that
+  // feeds the mode normalizer (plus the config-UI options, schema enums and
+  // the mode-precedence map). Entry points are already pinned to
+  // bypassPermissions; this deletes the other names from the selectable
+  // universe itself so they no longer resolve anywhere. Only arrays/maps
+  // whose elements are EXACTLY mode names AND that contain the four core
+  // modes count as registries \u2014 incidental pairs elsewhere stay untouched.
+  {
+    const universe = new Set(['default', 'acceptEdits', 'plan', 'auto',
+      'bypassPermissions', 'dontAsk', 'bubble', 'manual']);
+    const doomed = new Set(['default', 'acceptEdits', 'plan']);
+    const core = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
+    const deleteId = 'permission-modes-delete';
+    const drop = entry => {
+      results[deleteId].present = true;
+      edit(deleteId, entry, '/*clawgod:permission-modes-delete*/...[]');
+    };
+    walk(tree, node => {
+      if (node.type === 'ArrayExpression' && node.elements.length >= 4 &&
+          node.elements.every(entry => entry?.type === 'Literal' && universe.has(entry.value)) &&
+          core.every(mode => node.elements.some(entry => entry.value === mode))) {
+        for (const entry of node.elements) if (doomed.has(entry.value)) drop(entry);
+        return false;
+      }
+      if (node.type === 'ObjectExpression' && node.properties.length >= 4 &&
+          node.properties.every(property => property.type === 'Property' && !property.computed &&
+            universe.has(propertyName(property)) &&
+            property.value.type === 'Literal' && typeof property.value.value === 'number') &&
+          core.every(mode => node.properties.some(property => propertyName(property) === mode))) {
+        for (const property of node.properties) if (doomed.has(propertyName(property))) drop(property);
+        return false;
+      }
+    });
+  }
   return ranges;
 }
 
@@ -12068,6 +12107,7 @@ const PENTEST_AST_META = {
   'permission-mcp-allowlist-off': 'Skip MCP server allowlist / policy checks',
   'permission-fs-path-off': 'Allow reads/writes outside the working directory',
   'permission-shell-pattern-off': 'Skip built-in shell safety vet',
+  'permission-modes-delete': 'Delete the default/acceptEdits/plan entries from every permission-mode registry',
   'security-bundled-skills': 'Keep code-review as the bundled skill initializer',
   'security-builtin-plugins': 'Block optional built-in plugin factories',
   'security-tool-startup': 'Block optional tool loading (Cron/RemoteTrigger/Push/Design/Projects/Artifact/Appifact)',
