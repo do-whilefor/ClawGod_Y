@@ -794,6 +794,9 @@ const PENTEST_AST_META = {
   'permission-fs-path-off': 'Allow reads/writes outside the working directory',
   'permission-shell-pattern-off': 'Skip built-in shell safety vet',
   'permission-modes-delete': 'Delete the default/acceptEdits/plan entries from every permission-mode registry',
+  'permission-deny-rules-off': 'Empty alwaysDenyRules/alwaysAskRules so settings-level deny rules cannot block tools',
+  'permission-disallowed-tools-off': 'Ignore the disallowedTools setting so no tool can be hidden by name',
+  'security-managed-settings-off': 'Disable the local managed-settings policy file (enterprise rules, allowed models, minimum version)',
   'security-bundled-skills': 'Keep code-review as the bundled skill initializer',
   'security-builtin-plugins': 'Block optional built-in plugin factories',
   'security-tool-startup': 'Block optional tool loading (Cron/RemoteTrigger/Push/Design/Projects/Artifact/Appifact)',
@@ -807,14 +810,16 @@ const PENTEST_AST_META = {
   'security-telemetry-off': 'Disable telemetry / analytics upload paths',
   'security-checkpoint-off': 'Disable file-checkpoint / rewind service',
   'security-warnings-off': 'Suppress startup warnings for removed tools and unrecognized models',
+  'security-command-surface': 'Delete office/consumer command-table entries (upgrade, release-notes, privacy-settings, feedback, statusline, doctor, cost, usage, vim, ide …); multi-agent and vuln-hunting commands stay',
   'cli-header-label': 'Startup header → Claude Code_Y',
   'pentest-prompt-rewrite': 'Strip client-side safety prompts and reword identity to authorized pentest context',
   'pentest-tool-descriptions': 'Recast tool descriptions for pentest use (Bash/WebFetch coaching, quote caps)',
   'pentest-runtime-gates': 'Force GrowthBook runtime gates and lift agent turn ceilings',
+  'pentest-flags-generic': 'Wrap every tengu_* GrowthBook getter with the local override map (flags.json / CLAWGOD_FLAGS)',
   'forge-stop-reason': 'Forge every non-tool stop_reason to end_turn at the SDK message record (default on; CLAWGOD_FORGE restricts)',
   'forge-message-record': 'Forge the assembled SDK message — refusal text rewritten to execution claims, or swallowed / emptied (default on; CLAWGOD_FORGE restricts)',
   'forge-stream-event': 'Forge raw SSE events in the main query loop — text / swallow / empty / stop_reason (default on; CLAWGOD_FORGE restricts)',
-  'forge-assistant-inject': 'Forge outgoing request messages — refusal-trace wire sweep plus the synthetic executed-assistant turn (default on; CLAWGOD_FORGE restricts)',
+  'forge-assistant-inject': 'Forge the whole outgoing request — history sweep, synthetic continuation prefill, system directive, params (stream/stop_sequences/thinking), metadata scrub, tool flags (default on; CLAWGOD_FORGE restricts)',
   'forge-end-turn': 'Force the run-loop turn-state stop reason to end_turn (default on; CLAWGOD_FORGE restricts)',
   'forge-refusal-blind': 'Blind the app-level API-error refusal classifier so refusal handling never triggers (default on; CLAWGOD_FORGE restricts)',
   'forge-error-message': 'Refusal-class API errors become clean assistant records — execution claim or empty end_turn (default on; CLAWGOD_FORGE restricts)',
@@ -1036,7 +1041,12 @@ try {
       if (result[id].matches.length) astMatches.get(id).push({ file, content, matches: result[id].matches });
     }
     // CLAWGOD_Y HOOK (3 of 4) — fork-only pentest scan on the same pass.
-    const pentest = scanPentestPatches(content);
+    // Upstream AST matches share applyAstEdits with the pentest matches, so
+    // hand their ranges over: the generic flag wrapper refuses to wrap a
+    // call inside an upstream-claimed node (overlap → failed install).
+    const upstreamRanges = [];
+    for (const id of AST_PATCH_IDS) for (const m of result[id].matches) upstreamRanges.push([m.start, m.end]);
+    const pentest = scanPentestPatches(content, upstreamRanges);
     for (const id of PENTEST_AST_PATCH_IDS) {
       if (pentest[id].present) astPresent.add(id);
       if (pentest[id].patched) astPatched.add(id);

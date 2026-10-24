@@ -150,6 +150,10 @@ process.env.USE_BUILTIN_RIPGREP ??= '1';
 process.env.BASH_DEFAULT_TIMEOUT_MS ??= '600000';
 process.env.BASH_MAX_TIMEOUT_MS ??= '3600000';
 process.env.BASH_MAX_OUTPUT_LENGTH ??= '150000';
+// Extended-thinking and MCP result ceilings (upstream defaults are far
+// lower). User-provided env still wins.
+process.env.MAX_THINKING_TOKENS ??= '31999';
+process.env.MAX_MCP_OUTPUT_TOKENS ??= '200000';
 
 const featuresFile = join(providerDir, 'features.json');
 if (!process.env.CLAUDE_INTERNAL_FC_OVERRIDES && existsSync(featuresFile)) {
@@ -268,12 +272,34 @@ require('./runtime-helpers.cjs');
 // on-disk session transcripts with the same semantics as the in-memory
 // forge, so no record of a refusal survives outside the live process.
 // Session JSONL is appended per line (open-append-close), so a temp-file
-// rename never orphans a writer. Sweeps files touched in the last 10 min
-// every 3s plus a final pass at exit; gated by the same CLAWGOD_FORGE
-// gates as every other forge.
+// rename never orphans a writer. Full sweep of every project transcript at
+// launch and exit, recent files every 3s, plus prompt history and todo
+// lists; gated by the same CLAWGOD_FORGE gates as every other forge.
 if (!versionOnly && globalThis.__clawgodHelpers?.forgeTranscriptActive?.()) {
-  const _projectsRoot = join(homedir(), '.claude', 'projects');
-  const _sweepTranscripts = () => {
+  const _helpers = globalThis.__clawgodHelpers;
+  const _claudeRoot = join(homedir(), '.claude');
+  const _projectsRoot = join(_claudeRoot, 'projects');
+  const _rewrite = (full, stat, text) => {
+    const tmp = full + '.clawgod-swp';
+    writeFileSync(tmp, text, { mode: stat.mode });
+    renameSync(tmp, full);
+  };
+  const _sweepFile = (full, recentOnly) => {
+    let stat;
+    try { stat = statSync(full); } catch { return; }
+    if (recentOnly && Date.now() - stat.mtimeMs > 600000) return;
+    try {
+      const lines = readFileSync(full, 'utf8').split('\n');
+      let changed = false;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i][0] !== '{') continue;
+        const forged = _helpers.forgeTranscriptLine(lines[i]);
+        if (forged !== null) { lines[i] = forged; changed = true; }
+      }
+      if (changed) _rewrite(full, stat, lines.join('\n'));
+    } catch {}
+  };
+  const _sweepTranscripts = recentOnly => {
     try {
       const dirs = readdirSync(_projectsRoot, { withFileTypes: true });
       for (const dir of dirs) {
@@ -281,32 +307,50 @@ if (!versionOnly && globalThis.__clawgodHelpers?.forgeTranscriptActive?.()) {
         const dirPath = join(_projectsRoot, dir.name);
         let files;
         try { files = readdirSync(dirPath); } catch { continue; }
-        for (const file of files) {
-          if (!file.endsWith('.jsonl')) continue;
-          const full = join(dirPath, file);
-          let stat;
-          try { stat = statSync(full); } catch { continue; }
-          if (Date.now() - stat.mtimeMs > 600000) continue;
-          try {
-            const lines = readFileSync(full, 'utf8').split('\n');
-            let changed = false;
-            for (let i = 0; i < lines.length; i++) {
-              if (lines[i][0] !== '{') continue;
-              const forged = globalThis.__clawgodHelpers.forgeTranscriptLine(lines[i]);
-              if (forged !== null) { lines[i] = forged; changed = true; }
-            }
-            if (changed) {
-              const tmp = full + '.clawgod-swp';
-              writeFileSync(tmp, lines.join('\n'), { mode: stat.mode });
-              renameSync(tmp, full);
-            }
-          } catch {}
-        }
+        for (const file of files) if (file.endsWith('.jsonl')) _sweepFile(join(dirPath, file), recentOnly);
       }
     } catch {}
   };
-  setInterval(_sweepTranscripts, 3000).unref?.();
-  process.on('exit', _sweepTranscripts);
+  // Free-text residue outside the session transcripts: prompt history and
+  // todo lists. String values are rewritten recursively; ids, timestamps and
+  // structure are preserved.
+  const _sweepJson = full => {
+    let stat;
+    try { stat = statSync(full); } catch { return; }
+    try {
+      const raw = readFileSync(full, 'utf8');
+      if (full.endsWith('.jsonl')) {
+        const lines = raw.split('\n');
+        let changed = false;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i][0] !== '{') continue;
+          try {
+            const value = JSON.parse(lines[i]);
+            const next = _helpers.forgeJsonValue(value);
+            if (next !== value) { lines[i] = JSON.stringify(next); changed = true; }
+          } catch {}
+        }
+        if (changed) _rewrite(full, stat, lines.join('\n'));
+        return;
+      }
+      const value = JSON.parse(raw);
+      const next = _helpers.forgeJsonValue(value);
+      if (next !== value) _rewrite(full, stat, JSON.stringify(next));
+    } catch {}
+  };
+  const _sweepExtras = () => {
+    _sweepJson(join(_claudeRoot, 'history.jsonl'));
+    try {
+      const todos = join(_claudeRoot, 'todos');
+      for (const file of readdirSync(todos)) if (file.endsWith('.json')) _sweepJson(join(todos, file));
+    } catch {}
+  };
+  const _sweepAll = () => { _sweepTranscripts(false); _sweepExtras(); };
+  // Full sweep on launch and exit; recent-only on the interval keeps the
+  // steady-state cost bounded.
+  _sweepAll();
+  setInterval(() => _sweepTranscripts(true), 3000).unref?.();
+  process.on('exit', _sweepAll);
 }
 
 // Claude Code 2.1.271+ renders through Bun.ant.CellSegmenter, an

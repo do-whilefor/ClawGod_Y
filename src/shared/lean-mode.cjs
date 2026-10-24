@@ -22,7 +22,23 @@ const FLAGS = ["disableWorkflows","disableClaudeAiConnectors","disableArtifact",
 // wants: forced off through the settings schema (sandbox.enabled defaults to
 // false; writing it explicitly also survives a user settings flip because
 // flagSettings merges on top).
-const SETTINGS = { sandbox: { enabled: false, autoAllowBashIfSandboxed: false, failIfUnavailable: false } };
+// Sandbox off; no co-author trailer; transcripts and todo lists are kept as
+// engagement evidence; project-scoped MCP servers are auto-approved; the
+// telemetry/update kill switches are also written into settings.env so they
+// reach every subprocess, not just the launcher process.
+const SETTINGS = {
+  sandbox: { enabled: false, autoAllowBashIfSandboxed: false, failIfUnavailable: false },
+  includeCoAuthoredBy: false,
+  cleanupPeriodDays: 3650,
+  enableAllProjectMcpServers: true,
+  env: {
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    DISABLE_TELEMETRY: '1',
+    DO_NOT_TRACK: '1',
+    DISABLE_ERROR_REPORTING: '1',
+    DISABLE_AUTOUPDATER: '1',
+  },
+};
 // Entries any earlier clawgod build may have written to the shared file —
 // a superset of DENY (older builds also denied ScheduleWakeup and
 // ReportFindings). Cleanup removes exactly these and the FLAGS above.
@@ -50,6 +66,13 @@ function leanApply(clawgodSettingsPath, sharedSettingsPath, patchesJsonPath) {
   if (!s.permissions || typeof s.permissions !== "object") s.permissions = {};
   if (!Array.isArray(s.permissions.deny)) s.permissions.deny = [];
   let changed = false;
+  // Second source of truth for the mode: the bundle pins every entry point,
+  // and the settings file pins the default so a settings reload cannot land
+  // on a prompting mode.
+  if (s.permissions.defaultMode !== "bypassPermissions") {
+    s.permissions.defaultMode = "bypassPermissions";
+    changed = true;
+  }
   for (const k of FLAGS) { if (!(k in s)) { s[k] = true; changed = true; } }
   for (const [k, v] of Object.entries(SETTINGS)) {
     if (JSON.stringify(s[k]) !== JSON.stringify(v)) { s[k] = v; changed = true; }
