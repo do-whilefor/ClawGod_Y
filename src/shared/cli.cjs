@@ -135,6 +135,15 @@ process.env.DISABLE_AUTOUPDATER = '1';
 process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL ??= '1';
 // System ripgrep is the most reliable fallback under the Bun runtime.
 process.env.USE_BUILTIN_RIPGREP ??= '1';
+// Pentest posture: long scans (nmap / masscan / ffuf) and large tool output
+// are the norm. Per-command default 10 min and ceiling 1 h (upstream
+// 2 min / 10 min; the ceiling reader applies no upper clamp, verified
+// against 2.1.309), output read-back at the 150 000-char env ceiling
+// (upstream default 30 000; values above 150 000 are clamped back down).
+// User-provided env still wins.
+process.env.BASH_DEFAULT_TIMEOUT_MS ??= '600000';
+process.env.BASH_MAX_TIMEOUT_MS ??= '3600000';
+process.env.BASH_MAX_OUTPUT_LENGTH ??= '150000';
 
 const featuresFile = join(providerDir, 'features.json');
 if (!process.env.CLAUDE_INTERNAL_FC_OVERRIDES && existsSync(featuresFile)) {
