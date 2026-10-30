@@ -21,9 +21,9 @@ ClawGod_Y 是针对官方 [Claude Code](https://docs.anthropic.com/en/docs/claud
 
 补丁实现参考了 [0Chencc/clawgod](https://github.com/0Chencc/clawgod)，感谢原项目的开源工作。本 fork 保留了上游的跨版本补丁架构，并将打补丁的运行时独立安装：
 
-- **`clawgod` 启动打补丁的 Claude Code（固定安装 v2.1.312）。** 补丁运行时完全存放在 `~/.clawgod`（Windows 下为 `%USERPROFILE%\.clawgod`）。
+- **`clawgod` 启动打补丁的 Claude Code（固定安装 v2.1.314）。** 补丁运行时完全存放在 `~/.clawgod`（Windows 下为 `%USERPROFILE%\.clawgod`）。
 - **如果本机已有 Claude Code，原版 `claude` 命令保持不变。** 无需预先安装官方 Claude Code；已有的原版 `claude update` 照常工作。
-- **保留跨版本兼容设计。** 补丁使用跨版本锚点，可适配其他 Claude Code 版本，但不保证兼容任意版本。当前安装器仅安装 v2.1.312；非必需补丁未匹配时会警告并跳过，必需的提示词注入或源码处理失败时仍会中止安装。
+- **保留跨版本兼容设计。** 补丁使用跨版本锚点，可适配其他 Claude Code 版本，但不保证兼容任意版本。当前安装器仅安装 v2.1.314；非必需补丁未匹配时会警告并跳过，必需的提示词注入或源码处理失败时仍会中止安装。
 - **面向渗透测试的补丁**：默认绕过工具权限提示与安全分类器，将提示词改写为授权测试场景，并裁剪掉无关的办公/消费级功能。
 
 ## 使用方法
