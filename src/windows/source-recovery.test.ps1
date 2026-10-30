@@ -34,7 +34,7 @@ try {
     }
     Assert (((Get-Content (Join-Path $ClawDir 'bunfs\commands.js') -Raw).Trim()) -eq '// old graph') 'Graph rollback failed'
     Assert (-not (Test-Path (Join-Path $ClawDir 'claude.staged.exe'))) 'Staged binary was not cleaned up'
-    $applySection = [regex]::Match($template, '(?s)& \{\s*\$ErrorActionPreference = ''Continue''\s*node \(Join-Path \$ClawDir "patch\.mjs"\) --capture-clean-source.*?(?=\$needsShim = \$false)').Value
+    $applySection = [regex]::Match($template, '(?s)& \{\s*\$ErrorActionPreference = ''Continue''\s*node \(Join-Path \$ClawDir "patch\.mjs"\) --capture-clean-source.*?(?=\$bunfsDir = Join-Path \$ClawDir "bunfs")').Value
     Assert $applySection 'Patch application section not found'
     Set-Content (Join-Path $ClawDir 'patch.mjs') 'if(process.argv.includes("--capture-clean-source"))process.exit(0);process.stderr.write("expected diagnostic");process.exit(7)' -Encoding ASCII
     Set-Content (Join-Path $ClawDir 'old.cjs') '// previous working source' -Encoding ASCII
