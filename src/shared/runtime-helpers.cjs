@@ -223,12 +223,7 @@ function isIdentityResidue(section) {
 
 const INJECT_FRAGMENT_MAX = 4096;
 function injectMatchers(prompt) {
-  const fragments = [];
-  for (const piece of prompt.split(/\n{2,}/)) {
-    const trimmed = piece.trim();
-    if (trimmed) fragments.push(trimmed);
-  }
-  if (!fragments.length && prompt.trim()) fragments.push(prompt.trim());
+  const fragments = prompt.split(/\n{2,}/).map(piece => piece.trim()).filter(Boolean);
   const matchers = [];
   for (const fragment of fragments) {
     for (let i = 0; i < fragment.length; i += INJECT_FRAGMENT_MAX) {

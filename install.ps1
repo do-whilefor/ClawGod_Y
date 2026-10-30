@@ -842,7 +842,6 @@ if (isChunked) {
   writeFileSync(dst, code);
   unlinkSync(src);
 
-  let n = 0;
   for (const fp of graphFiles) {
     let fc = readFileSync(fp, 'utf8');
     fc = stripPragma(fc);
@@ -850,9 +849,8 @@ if (isChunked) {
     fc = fixFileURLs(fc);
     fc = fixAssetRequires(fc, assets);
     writeFileSync(fp, fc);
-    n++;
   }
-  console.log(`cli.original.cjs: ${code.length} bytes (chunked, rewrote ${n} graph files)`);
+  console.log(`cli.original.cjs: ${code.length} bytes (chunked, rewrote ${graphFiles.size} graph files)`);
 } else {
   code = code.replace(
     /require\(['"](\/\$bunfs\/root\/([\w-]+)\.node)['"]\)/g,
@@ -1308,24 +1306,17 @@ for (var _name in process.env) {
 }
 
 for (var _k in _cfg) {
-  var _known = CLAWGOD_RUNTIME_FEATURES.indexOf(_k) >= 0;
-  for (var _f in CLAWGOD_FEATURES_META) {
-    if (CLAWGOD_FEATURES_META[_f].indexOf(_k) >= 0) { _known = true; break; }
-  }
+  var _known = CLAWGOD_RUNTIME_FEATURES.includes(_k) ||
+    Object.values(CLAWGOD_FEATURES_META).some(features => features.includes(_k));
   if (!_known) process.stderr.write('[clawgod] warning: unknown feature "' + _k + '" in patches.json\n');
 }
 
 var _gate = {};
 for (var _pid in CLAWGOD_FEATURES_META) {
-  var _feats = CLAWGOD_FEATURES_META[_pid];
-  var _on = false;
-  for (var _j = 0; _j < _feats.length; _j++) {
-    if (_cfg[_feats[_j]] !== false) { _on = true; break; }
-  }
-  _gate[_pid] = _on;
+  _gate[_pid] = CLAWGOD_FEATURES_META[_pid].some(feature => _cfg[feature] !== false);
 }
-for (var _rfi = 0; _rfi < CLAWGOD_RUNTIME_FEATURES.length; _rfi++) {
-  _gate[CLAWGOD_RUNTIME_FEATURES[_rfi]] = _cfg[CLAWGOD_RUNTIME_FEATURES[_rfi]] !== false;
+for (var _feature of CLAWGOD_RUNTIME_FEATURES) {
+  _gate[_feature] = _cfg[_feature] !== false;
 }
 globalThis.__clawgodPatches = _gate;
 '@ | Set-Content (Join-Path $ClawDir "feature-gates.cjs") -Encoding UTF8
@@ -1865,12 +1856,7 @@ function isIdentityResidue(section) {
 
 const INJECT_FRAGMENT_MAX = 4096;
 function injectMatchers(prompt) {
-  const fragments = [];
-  for (const piece of prompt.split(/\n{2,}/)) {
-    const trimmed = piece.trim();
-    if (trimmed) fragments.push(trimmed);
-  }
-  if (!fragments.length && prompt.trim()) fragments.push(prompt.trim());
+  const fragments = prompt.split(/\n{2,}/).map(piece => piece.trim()).filter(Boolean);
   const matchers = [];
   for (const fragment of fragments) {
     for (let i = 0; i < fragment.length; i += INJECT_FRAGMENT_MAX) {
@@ -2104,8 +2090,6 @@ const SGR_EXTENDED = new Map([
 function slotFor(param) {
   const attr = SGR_ATTRS.get(param);
   if (attr) return attr;
-  const extended = SGR_EXTENDED.get(param);
-  if (extended) return extended;
   if ((param >= 30 && param <= 37) || (param >= 90 && param <= 97)) return ['fg', 39];
   if ((param >= 40 && param <= 47) || (param >= 100 && param <= 107)) return ['bg', 49];
   return null;
@@ -2409,7 +2393,7 @@ Write-OK "Bun.ant runtime shim created (bun-ant-shim.cjs)"
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePatchSource, walk } from './pentest-scanners.mjs';
+import { parsePatchSource, walk } from './ast-patches.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const entry = join(here, 'cli.cjs');
@@ -11049,8 +11033,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
       replaceBody('security-checkpoint-off', node, 'return!1;');
       return false;
     }
-    if (node.type === 'FunctionDeclaration' && noArgs(node) && !source(node.body).includes(marker('security-update-off'))) {
-      const body = source(node.body);
+    if (node.type === 'FunctionDeclaration' && noArgs(node)) {
       if ((body.includes('checkForUpdates') ||
            body.includes('/api/claude_code/version') ||
            body.includes('update-check')) &&
@@ -11058,9 +11041,6 @@ function scanRuntimeTrimming(tree, code, results, edit) {
         replaceBody('security-update-off', node, 'return void 0;');
         return false;
       }
-    }
-    if (node.type === 'FunctionDeclaration' && noArgs(node) && !source(node.body).includes(marker('security-telemetry-off'))) {
-      const body = source(node.body);
       if ((body.includes('telemetry.anthropic.com') || body.includes('analytics.anthropic.com') ||
            body.includes('/api/telemetry') || body.includes('trackEvent') ||
            body.includes('sendAnalytics')) &&
@@ -11068,9 +11048,6 @@ function scanRuntimeTrimming(tree, code, results, edit) {
         replaceBody('security-telemetry-off', node, 'return void 0;');
         return false;
       }
-    }
-    if (node.type === 'FunctionDeclaration' && noArgs(node) && !source(node.body).includes(marker('security-checkpoint-off'))) {
-      const body = source(node.body);
       if ((body.includes('checkpoint') && (body.includes('createCheckpoint') ||
            body.includes('restoreCheckpoint') || body.includes('rewind'))) &&
           !body.includes('CLAWGOD_CHECKPOINT')) {
@@ -12652,7 +12629,6 @@ if (isGraph) {
   files[TARGET] = readFileSync(TARGET, 'utf8');
 }
 const installedFiles = { ...files };
-let originalFiles = null;
 
 const version = (files[TARGET] || '').match(/Version:\s*([\d.]+)/)?.[1] || 'unknown';
 
@@ -12696,7 +12672,7 @@ if (revert) {
   process.exit(0);
 }
 
-originalFiles = { ...files };
+const originalFiles = { ...files };
 
 console.log(`\n${'\u2550'.repeat(55)}`);
 console.log(`  ClawGod (universal)`);
@@ -12854,12 +12830,11 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
 
   let fileChangedCount = 0;
   const strategies = new Map();
-  const relevantFiles = fileMatches.filter((fm) => fm.matches.length > 0);
 
   let totalMatches = 0;
   for (const fm of fileMatches) totalMatches += fm.matches.length;
 
-  if (relevantFiles.length === 0) {
+  if (fileMatches.length === 0) {
     if (p.appliedSentinel && Object.values(files).some(content => content.includes(p.appliedSentinel))) {
       console.log(`  \u2705 ${p.name} (already applied, patch marker present)`);
       applied++;
@@ -12919,9 +12894,8 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
 
   const uniqueLimit = p.unique ? 1 : Infinity;
   let appliedFiles = 0;
-  for (const fm of relevantFiles) {
+  for (const fm of fileMatches) {
     if (appliedFiles >= uniqueLimit) break;
-    let changed = false;
     let count = 0;
     const replacements = [];
     for (const m of fm.matches) {
@@ -12934,7 +12908,6 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
         } else {
           replacements.push({ start: m.index, end: m.index + m[0].length, replacement });
         }
-        changed = true;
         count++;
         if (m.strategy && m.strategy !== 'ast' && m.strategy !== 'regex') {
           strategies.set(m.strategy, (strategies.get(m.strategy) ?? 0) + 1);
@@ -12942,7 +12915,7 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
       }
     }
     if (replacements.length) files[fm.file] = applyAstEdits(fm.content, replacements);
-    if (changed) appliedFiles++;
+    if (count > 0) appliedFiles++;
     fileChangedCount += count;
   }
 
@@ -12961,7 +12934,7 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
     }
     applied++;
     appliedIds.add(p.id);
-  } else if (relevantFiles.length > 0) {
+  } else {
     console.log(`  \u23ed  ${p.name} (no change needed)`);
     skipped++;
   }
@@ -13130,7 +13103,6 @@ Write-Dim "Compiling startup runtime ..."
 }
 if ($compileExitCode -ne 0) { Restore-Install; exit $compileExitCode }
 
-$needsShim = $false
 $bunfsDir = Join-Path $ClawDir "bunfs"
 $targets = @()
 if (Test-Path $bunfsDir) {
@@ -13142,8 +13114,7 @@ if (Test-Path $entry) { $targets += Get-Item $entry }
 $hit = $targets |
     Select-String -Pattern 'Bun\.ant\.CellSegmenter' -List -ErrorAction SilentlyContinue |
     Select-Object -First 1
-if ($hit) { $needsShim = $true }
-if ($needsShim) {
+if ($hit) {
     Write-Dim "Renderer runtime: Bun.ant.CellSegmenter (Claude >= 2.1.271) - served by bun-ant-shim.cjs"
 } else {
     Write-Dim "Renderer runtime: stock Bun APIs (shim present but unused)"

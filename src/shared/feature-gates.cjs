@@ -15,23 +15,16 @@ for (var _name in process.env) {
 }
 
 for (var _k in _cfg) {
-  var _known = CLAWGOD_RUNTIME_FEATURES.indexOf(_k) >= 0;
-  for (var _f in CLAWGOD_FEATURES_META) {
-    if (CLAWGOD_FEATURES_META[_f].indexOf(_k) >= 0) { _known = true; break; }
-  }
+  var _known = CLAWGOD_RUNTIME_FEATURES.includes(_k) ||
+    Object.values(CLAWGOD_FEATURES_META).some(features => features.includes(_k));
   if (!_known) process.stderr.write('[clawgod] warning: unknown feature "' + _k + '" in patches.json\n');
 }
 
 var _gate = {};
 for (var _pid in CLAWGOD_FEATURES_META) {
-  var _feats = CLAWGOD_FEATURES_META[_pid];
-  var _on = false;
-  for (var _j = 0; _j < _feats.length; _j++) {
-    if (_cfg[_feats[_j]] !== false) { _on = true; break; }
-  }
-  _gate[_pid] = _on;
+  _gate[_pid] = CLAWGOD_FEATURES_META[_pid].some(feature => _cfg[feature] !== false);
 }
-for (var _rfi = 0; _rfi < CLAWGOD_RUNTIME_FEATURES.length; _rfi++) {
-  _gate[CLAWGOD_RUNTIME_FEATURES[_rfi]] = _cfg[CLAWGOD_RUNTIME_FEATURES[_rfi]] !== false;
+for (var _feature of CLAWGOD_RUNTIME_FEATURES) {
+  _gate[_feature] = _cfg[_feature] !== false;
 }
 globalThis.__clawgodPatches = _gate;

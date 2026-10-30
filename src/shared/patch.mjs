@@ -457,7 +457,6 @@ if (isGraph) {
   files[TARGET] = readFileSync(TARGET, 'utf8');
 }
 const installedFiles = { ...files };
-let originalFiles = null;
 
 const version = (files[TARGET] || '').match(/Version:\s*([\d.]+)/)?.[1] || 'unknown';
 
@@ -501,7 +500,7 @@ if (revert) {
   process.exit(0);
 }
 
-originalFiles = { ...files };
+const originalFiles = { ...files };
 
 console.log(`\n${'═'.repeat(55)}`);
 console.log(`  ClawGod (universal)`);
@@ -659,12 +658,11 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
 
   let fileChangedCount = 0;
   const strategies = new Map();
-  const relevantFiles = fileMatches.filter((fm) => fm.matches.length > 0);
 
   let totalMatches = 0;
   for (const fm of fileMatches) totalMatches += fm.matches.length;
 
-  if (relevantFiles.length === 0) {
+  if (fileMatches.length === 0) {
     if (p.appliedSentinel && Object.values(files).some(content => content.includes(p.appliedSentinel))) {
       console.log(`  ✅ ${p.name} (already applied, patch marker present)`);
       applied++;
@@ -724,9 +722,8 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
 
   const uniqueLimit = p.unique ? 1 : Infinity;
   let appliedFiles = 0;
-  for (const fm of relevantFiles) {
+  for (const fm of fileMatches) {
     if (appliedFiles >= uniqueLimit) break;
-    let changed = false;
     let count = 0;
     const replacements = [];
     for (const m of fm.matches) {
@@ -739,7 +736,6 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
         } else {
           replacements.push({ start: m.index, end: m.index + m[0].length, replacement });
         }
-        changed = true;
         count++;
         if (m.strategy && m.strategy !== 'ast' && m.strategy !== 'regex') {
           strategies.set(m.strategy, (strategies.get(m.strategy) ?? 0) + 1);
@@ -747,7 +743,7 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
       }
     }
     if (replacements.length) files[fm.file] = applyAstEdits(fm.content, replacements);
-    if (changed) appliedFiles++;
+    if (count > 0) appliedFiles++;
     fileChangedCount += count;
   }
 
@@ -766,7 +762,7 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
     }
     applied++;
     appliedIds.add(p.id);
-  } else if (relevantFiles.length > 0) {
+  } else {
     console.log(`  ⏭  ${p.name} (no change needed)`);
     skipped++;
   }

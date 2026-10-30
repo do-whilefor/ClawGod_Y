@@ -459,7 +459,6 @@ Write-Dim "Compiling startup runtime ..."
 }
 if ($compileExitCode -ne 0) { Restore-Install; exit $compileExitCode }
 
-$needsShim = $false
 $bunfsDir = Join-Path $ClawDir "bunfs"
 $targets = @()
 if (Test-Path $bunfsDir) {
@@ -471,8 +470,7 @@ if (Test-Path $entry) { $targets += Get-Item $entry }
 $hit = $targets |
     Select-String -Pattern 'Bun\.ant\.CellSegmenter' -List -ErrorAction SilentlyContinue |
     Select-Object -First 1
-if ($hit) { $needsShim = $true }
-if ($needsShim) {
+if ($hit) {
     Write-Dim "Renderer runtime: Bun.ant.CellSegmenter (Claude >= 2.1.271) - served by bun-ant-shim.cjs"
 } else {
     Write-Dim "Renderer runtime: stock Bun APIs (shim present but unused)"

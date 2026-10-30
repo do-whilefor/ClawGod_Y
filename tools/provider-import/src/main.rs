@@ -52,13 +52,7 @@ fn detect_grok_key() -> Option<String> {
 }
 
 
-struct ValidationResult {
-    valid: bool,
-    models: Vec<String>,
-    error: Option<String>,
-}
-
-fn validate_key(key: &str, base_url: &str) -> ValidationResult {
+fn validate_key(key: &str, base_url: &str) -> Result<Vec<String>, String> {
     let url = format!("{}/models", base_url.trim_end_matches('/'));
 
     match ureq::get(&url)
@@ -68,39 +62,21 @@ fn validate_key(key: &str, base_url: &str) -> ValidationResult {
     {
         Ok(resp) => {
             let body: Value = resp.into_json().unwrap_or(json!({}));
-            let models: Vec<String> = body["data"]
+            Ok(body["data"]
                 .as_array()
                 .map(|arr| {
                     arr.iter()
                         .filter_map(|m| m["id"].as_str().map(String::from))
                         .collect()
                 })
-                .unwrap_or_default();
-
-            ValidationResult {
-                valid: true,
-                models,
-                error: None,
-            }
+                .unwrap_or_default())
         }
-        Err(ureq::Error::Status(401, _)) => ValidationResult {
-            valid: false,
-            models: vec![],
-            error: Some("Invalid API key (401 Unauthorized)".into()),
-        },
+        Err(ureq::Error::Status(401, _)) => Err("Invalid API key (401 Unauthorized)".into()),
         Err(ureq::Error::Status(code, resp)) => {
             let body = resp.into_string().unwrap_or_default();
-            ValidationResult {
-                valid: false,
-                models: vec![],
-                error: Some(format!("HTTP {} — {}", code, body)),
-            }
+            Err(format!("HTTP {} — {}", code, body))
         }
-        Err(e) => ValidationResult {
-            valid: false,
-            models: vec![],
-            error: Some(format!("Connection failed: {}", e)),
-        },
+        Err(e) => Err(format!("Connection failed: {}", e)),
     }
 }
 
@@ -235,26 +211,23 @@ fn cmd_grok(args: &[String]) {
     };
 
     eprintln!("\n  Verifying key with {}...", base_url);
-    let result = validate_key(&api_key, &base_url);
-
-    if !result.valid {
-        eprintln!("  FAILED: {}", result.error.unwrap_or_default());
+    let models = validate_key(&api_key, &base_url).unwrap_or_else(|error| {
+        eprintln!("  FAILED: {}", error);
         process::exit(1);
-    }
+    });
 
     eprintln!("  Key valid.");
 
     let default_model = "grok-4";
     let default_small = "grok-3-mini";
 
-    let model = model_override.unwrap_or_else(|| select_model(&result.models, default_model));
+    let model = model_override.unwrap_or_else(|| select_model(&models, default_model));
 
     let small_model = match small_model_override {
         Some(m) => m,
         None => {
             let candidates = ["grok-3-mini", "grok-3-mini-fast"];
-            let auto = result
-                .models
+            let auto = models
                 .iter()
                 .find(|m| candidates.contains(&m.as_str()))
                 .map(|s| s.as_str())
@@ -324,18 +297,21 @@ fn cmd_openai_compat(args: &[String]) {
     });
 
     eprintln!("\n  Verifying key with {}...", url);
-    let result = validate_key(&api_key, &url);
-
-    if !result.valid {
-        eprintln!("  WARNING: {}", result.error.unwrap_or_default());
-        eprintln!("  Continuing anyway (some APIs don't expose /models)...\n");
-    } else {
-        eprintln!("  Key valid.");
-    }
+    let models = match validate_key(&api_key, &url) {
+        Ok(models) => {
+            eprintln!("  Key valid.");
+            models
+        }
+        Err(error) => {
+            eprintln!("  WARNING: {}", error);
+            eprintln!("  Continuing anyway (some APIs don't expose /models)...\n");
+            Vec::new()
+        }
+    };
 
     let selected_model = model.unwrap_or_else(|| {
-        if result.valid && !result.models.is_empty() {
-            select_model(&result.models, &result.models[0])
+        if !models.is_empty() {
+            select_model(&models, &models[0])
         } else {
             eprint!("  Model name: ");
             io::stderr().flush().unwrap();
@@ -373,11 +349,9 @@ fn cmd_status() {
             if has_key && (ptype == "grok" || ptype == "openai-compat") {
                 let key = config["apiKey"].as_str().unwrap();
                 eprintln!("\n  Verifying...");
-                let result = validate_key(key, url);
-                if result.valid {
-                    eprintln!("  Key valid. {} model(s) available.", result.models.len());
-                } else {
-                    eprintln!("  Key INVALID: {}", result.error.unwrap_or_default());
+                match validate_key(key, url) {
+                    Ok(models) => eprintln!("  Key valid. {} model(s) available.", models.len()),
+                    Err(error) => eprintln!("  Key INVALID: {}", error),
                 }
             }
         }

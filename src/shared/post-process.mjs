@@ -102,7 +102,6 @@ if (isChunked) {
   writeFileSync(dst, code);
   unlinkSync(src);
 
-  let n = 0;
   for (const fp of graphFiles) {
     let fc = readFileSync(fp, 'utf8');
     fc = stripPragma(fc);
@@ -110,9 +109,8 @@ if (isChunked) {
     fc = fixFileURLs(fc);
     fc = fixAssetRequires(fc, assets);
     writeFileSync(fp, fc);
-    n++;
   }
-  console.log(`cli.original.cjs: ${code.length} bytes (chunked, rewrote ${n} graph files)`);
+  console.log(`cli.original.cjs: ${code.length} bytes (chunked, rewrote ${graphFiles.size} graph files)`);
 } else {
   code = code.replace(
     /require\(['"](\/\$bunfs\/root\/([\w-]+)\.node)['"]\)/g,

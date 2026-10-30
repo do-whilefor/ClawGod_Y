@@ -435,25 +435,12 @@ done
 
 IMPORT_BIN="$CLAWGOD_DIR/clawgod-import"
 if [ ! -x "$IMPORT_BIN" ]; then
-  IMPORT_ARCH="$(uname -m)"
-  IMPORT_OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  case "$IMPORT_ARCH" in
-    x86_64|amd64) IMPORT_ARCH="x64" ;;
-    aarch64|arm64) IMPORT_ARCH="arm64" ;;
-  esac
-  case "$IMPORT_OS" in
-    darwin) IMPORT_SUFFIX="darwin-$IMPORT_ARCH" ;;
-    linux)  IMPORT_SUFFIX="linux-$IMPORT_ARCH" ;;
-    *)      IMPORT_SUFFIX="" ;;
-  esac
-  if [ -n "$IMPORT_SUFFIX" ]; then
-    IMPORT_URL="https://github.com/do-whilefor/Clawgod_Y/releases/latest/download/clawgod-import-$IMPORT_SUFFIX"
-    if curl -fsSL -o "$IMPORT_BIN" "$IMPORT_URL" 2>/dev/null; then
-      chmod +x "$IMPORT_BIN"
-      info "Provider import tool installed (clawgod-import)"
-    else
-      dim "Provider import tool not yet available (build pending)"
-    fi
+  IMPORT_URL="https://github.com/do-whilefor/Clawgod_Y/releases/latest/download/clawgod-import-$os-$arch"
+  if curl -fsSL -o "$IMPORT_BIN" "$IMPORT_URL" 2>/dev/null; then
+    chmod +x "$IMPORT_BIN"
+    info "Provider import tool installed (clawgod-import)"
+  else
+    dim "Provider import tool not yet available (build pending)"
   fi
 fi
 

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePatchSource, walk } from './pentest-scanners.mjs';
+import { parsePatchSource, walk } from './ast-patches.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const entry = join(here, 'cli.cjs');

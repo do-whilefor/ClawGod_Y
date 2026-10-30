@@ -51,8 +51,6 @@ const SGR_EXTENDED = new Map([
 function slotFor(param) {
   const attr = SGR_ATTRS.get(param);
   if (attr) return attr;
-  const extended = SGR_EXTENDED.get(param);
-  if (extended) return extended;
   if ((param >= 30 && param <= 37) || (param >= 90 && param <= 97)) return ['fg', 39];
   if ((param >= 40 && param <= 47) || (param >= 100 && param <= 107)) return ['bg', 49];
   return null;
