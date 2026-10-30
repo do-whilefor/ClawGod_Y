@@ -1,0 +1,37 @@
+name: Cache Cleanup Weekly
+
+
+on:
+  schedule:
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete all repo caches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ids=$(gh cache list --repo "$REPO" --limit 200 --json id --jq '.[].id')
+          if [[ -z "$ids" ]]; then
+            echo "No caches to delete."
+            exit 0
+          fi
+          count=$(printf '%s\n' "$ids" | grep -c . || true)
+          echo "Deleting $count cache entries…"
+          while IFS= read -r id; do
+            [[ -z "$id" ]] && continue
+            gh cache delete "$id" --repo "$REPO" \
+              && echo "  ✓ $id" \
+              || echo "  ✗ $id (already gone or transient error)"
+          done <<< "$ids"
+          echo "Done. Next compat-daily run will repopulate ~/.npm fresh."

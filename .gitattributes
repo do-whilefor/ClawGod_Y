@@ -1,0 +1,4 @@
+build.js text eol=lf
+install.sh text eol=lf
+install.ps1 text eol=lf
+src/** text eol=lf

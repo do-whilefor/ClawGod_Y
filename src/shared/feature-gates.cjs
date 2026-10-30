@@ -1,0 +1,37 @@
+'use strict';
+const CLAWGOD_FEATURES_META = {};
+
+var CLAWGOD_RUNTIME_FEATURES = ['bun-ant-shim'];
+
+var clawgodDir = require('path').join(require('os').homedir(), '.clawgod');
+
+var _cfg = {};
+try { _cfg = JSON.parse(require('fs').readFileSync(require('path').join(clawgodDir, 'patches.json'), 'utf8')); } catch {}
+for (var _name in process.env) {
+  if (_name.indexOf('CLAWGOD_FEATURE_') !== 0) continue;
+  var _val = process.env[_name];
+  if (_val !== 'true' && _val !== 'false') continue;
+  _cfg[_name.slice('CLAWGOD_FEATURE_'.length).toLowerCase().replace(/_/g, '-')] = _val === 'true';
+}
+
+for (var _k in _cfg) {
+  var _known = CLAWGOD_RUNTIME_FEATURES.indexOf(_k) >= 0;
+  for (var _f in CLAWGOD_FEATURES_META) {
+    if (CLAWGOD_FEATURES_META[_f].indexOf(_k) >= 0) { _known = true; break; }
+  }
+  if (!_known) process.stderr.write('[clawgod] warning: unknown feature "' + _k + '" in patches.json\n');
+}
+
+var _gate = {};
+for (var _pid in CLAWGOD_FEATURES_META) {
+  var _feats = CLAWGOD_FEATURES_META[_pid];
+  var _on = false;
+  for (var _j = 0; _j < _feats.length; _j++) {
+    if (_cfg[_feats[_j]] !== false) { _on = true; break; }
+  }
+  _gate[_pid] = _on;
+}
+for (var _rfi = 0; _rfi < CLAWGOD_RUNTIME_FEATURES.length; _rfi++) {
+  _gate[CLAWGOD_RUNTIME_FEATURES[_rfi]] = _cfg[CLAWGOD_RUNTIME_FEATURES[_rfi]] !== false;
+}
+globalThis.__clawgodPatches = _gate;

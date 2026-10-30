@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Set up Bun (canary)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
+
+      - name: Install ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -y ripgrep
+
+      - name: Verify generated installers
+        run: node build.js --check
+
+      - name: Dry-run install and startup probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/release-home"
+          mkdir -p "$HOME"
+          bash install.sh >/tmp/release-install.log 2>&1 || { cat /tmp/release-install.log; exit 1; }
+          node "$HOME/.clawgod/startup-check.cjs" "$(command -v bun)" "$HOME/.clawgod/cli.cjs" --probe-tools
+
+      - name: Resolve versions
+        id: versions
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          prev=$(git tag --sort=-version:refname | grep -v "^${tag}$" | head -n1)
+          echo "prev=${prev}" >> "$GITHUB_OUTPUT"
+          if [ -n "$prev" ]; then
+            echo "range=${prev}..${tag}" >> "$GITHUB_OUTPUT"
+          else
+            echo "range=${tag}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release notes
+        id: notes
+        run: |
+          tag="${{ steps.versions.outputs.tag }}"
+          prev="${{ steps.versions.outputs.prev }}"
+          range="${{ steps.versions.outputs.range }}"
+          {
+            echo "## Changes"
+            echo
+            if [ -n "$prev" ]; then
+              git log --pretty='- %s (%h)' "$range"
+            else
+              git log --pretty='- %s (%h)' "$tag"
+            fi
+            echo
+            echo "## Install"
+            echo
+            echo '**macOS / Linux:**'
+            echo '```bash'
+            echo "curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/install.sh | bash"
+            echo '```'
+            echo
+            echo '**Windows (PowerShell):**'
+            echo '```powershell'
+            echo "irm https://github.com/${{ github.repository }}/releases/latest/download/install.ps1 | iex"
+            echo '```'
+            if [ -n "$prev" ]; then
+              echo
+              echo "**Full changelog:** https://github.com/${{ github.repository }}/compare/${prev}...${tag}"
+            fi
+          } > release-notes.md
+
+      - name: Inject version from tag
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          echo "Injecting version: $ver"
+          sed -i "s/^CLAWGOD_SELF_VERSION=\".*\"/CLAWGOD_SELF_VERSION=\"${ver}\"/" install.sh
+          sed -i "s/^\\\$ClawSelfVersion = \"[^\"]*\"/\$ClawSelfVersion = \"${ver}\"/" install.ps1
+          grep 'CLAWGOD_SELF_VERSION=' install.sh | head -1
+          grep 'ClawSelfVersion' install.ps1 | head -1
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.versions.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" install.sh install.ps1 --clobber
+          else
+            gh release create "$tag" install.sh install.ps1 \
+              --title "ClawGod_Y $tag" \
+              --notes-file release-notes.md
+          fi

@@ -1,0 +1,211 @@
+# Installer build sources
+
+`install.sh` and `install.ps1` are generated, committed release artifacts.
+Edit the files under this directory, then rebuild from the repository root:
+
+```bash
+node build.js
+node build.js --check
+```
+
+The build must remain byte-for-byte reproducible. CI runs `--check` and fails
+when either generated installer is missing or differs from its sources.
+`.gitattributes` pins the complete build graph to LF on every platform.
+
+## Semantic patching
+
+The patcher uses Acorn AST nodes for `user-type-ant`,
+`bun-standalone-executable`, `growthbook-env-overrides-graph`,
+`computer-use-default`, `ultraplan`, `voice-mode`, `geo-stego-date`,
+`remote-settings-off`, and `wiggly-dove`.
+It parses each candidate file once, locates stable property/string names and grammar nodes, and splices
+only those node ranges. Metadata order, quote style, whitespace, and supported
+function forms do not determine the location. Comments and text inside strings
+are not patch sites. The remaining patches retain their existing regex matchers;
+this is an incremental migration, with no new feature unlocks.
+
+AST edits are checked for overlap and reparsed before the regex phase. Parse
+failures abort without writing runtime source, even with `--tolerate-stale`.
+An unsupported Ultraplan command shape is a stale matcher; the opt-in stale
+policy and runtime feature toggles work as before. The scanner accepts extracted
+CommonJS and ESM chunks, including top-level return and import/export statements.
+The date patch also fixes an unbalanced brace in the former regex replacement
+that made the 2.1.143 single-file bundle fail at startup. Its original body is
+preserved when the feature is disabled.
+
+`shared/acorn.mjs` is the unmodified distribution from **Acorn 8.18.0**, vendored
+with its MIT license in `shared/acorn.LICENSE`. Its SHA-256 is
+`953573b8fdab71599749ea5f2b33d3e760c2116178f9423ee7458dbe39d59453`.
+Both installers embed the parser, matcher, and license, so patching and
+`--no-upgrade` require no npm dependency installation. Include these payloads
+when copying the patcher, and preserve them in installation rollback snapshots.
+
+## Testing
+
+`node src/shared/ast-patches.test.mjs` checks semantic locations, property
+reordering, quoted/computed keys, function forms, directive preservation,
+unchanged neighboring code, runtime toggles, repeated patching, dry-run/verify,
+clean-source restoration, stale policy, and syntax-failure safety in both legacy
+and chunk layouts. CI runs this suite alongside the existing patch tests.
+
+`src/shared/patch.test.mjs` tests the classifier-timeout helper in
+`runtime-helpers.cjs` and runs the patcher on Ultraplan fixtures for legacy
+bundles and chunk graphs. It checks runtime toggles, metadata preservation,
+and rejection of unsupported shapes without changing neighboring commands.
+No Claude bundle is needed. Run locally with Node:
+
+```bash
+node src/shared/patch.test.mjs
+```
+
+The same suite checks the `wiggly-dove` privacy gate with renamed flag
+bindings, legacy/chunk layouts, runtime toggles, repeated patching, and stale
+matcher rejection. A bounded loopback HTTP capture verifies that automatic
+Git metadata never reaches the request while the protection is enabled.
+The patch covers this automatic metadata channel; prompts and tool results
+keep their usual behavior. `--tolerate-stale` can explicitly skip this patch
+if a future upstream shape is unsupported, as with other stale patches.
+
+`src/shared/bun-ant-shim.test.mjs` tests the `Bun.ant.CellSegmenter`
+implementation in `bun-ant-shim.cjs`: escape scanning, grapheme widths, style
+runs, hyperlink runs, capacity reporting, and the cell/damage packing that the
+patched bundle reads back. It runs under plain Node as well, because the shim
+falls back to a local width table when `Bun.stringWidth` is unavailable:
+
+```bash
+node src/shared/bun-ant-shim.test.mjs
+```
+
+`src/shared/terminal-reply.test.mjs` checks the incomplete DA1 reply timer,
+normal keyboard/paste fallback, its two-second timeout, and the actual patch
+composition for legacy bundles and chunk graphs:
+
+```bash
+node src/shared/terminal-reply.test.mjs
+```
+
+While a terminal probe is pending, a lone Escape or Alt+[ may wait up to two
+seconds for a reply continuation before the original parser handles it. With
+no outstanding probe, the original input timing is unchanged.
+
+`src/shared/lean.test.mjs` exercises the full launcher with isolated settings,
+plus the Unix and Windows installer settings scripts. It covers on/max/off
+transitions, old Remote Control settings migration, PowerShell Boolean casing,
+provider parity, and preservation of explicit network environment settings:
+
+```bash
+node src/shared/lean.test.mjs
+```
+
+`src/shared/provider.test.mjs` runs the launcher and proxy request handler with
+isolated configuration and mocked HTTP transport. It checks provider authentication,
+blank-token fallback, effort translation and environment precedence, including
+streaming requests and custom model aliases that omit `output_config`:
+
+```bash
+node src/shared/provider.test.mjs
+```
+
+`src/shared/openai-proxy.test.mjs` exercises request/response translation,
+including inline system messages alongside the top-level system prompt,
+tool selection and parallel calls, images/PDFs and unsupported content errors,
+local token estimates, HTTP failures, SSE framing and fragmented UTF-8,
+usage trailers, incomplete streams, cancellation, and timeouts. The provider
+suite also checks protocol selection, legacy aliases, and configuration errors.
+
+```bash
+node --test src/shared/openai-proxy.test.mjs
+bun test src/shared/openai-proxy.test.mjs src/shared/openai-proxy.integration.test.mjs
+```
+
+The integration suite runs a real Bun proxy and loopback HTTP upstream. It
+verifies a complete tool call/result round trip, streaming token accounting,
+error status/retry headers, local counting without network calls, and stream
+timeouts. It is skipped under Node, which cannot run `Bun.serve`. CI runs the
+protocol suite under Node and both suites under Bun on Unix and Windows.
+These fixtures do not certify compatibility with every third-party model.
+
+CI runs the JavaScript suites in the `build-sources` job, then loads the shim under Bun in the
+smoke jobs (`compat-daily.yml`).
+
+`src/ci/tui-smoke.py` tests an installed CLI in a POSIX PTY or Windows ConPTY.
+It uses isolated configuration and a local mock API, types a prompt, and
+checks the rendered screen for the reply. Install its Python dependencies
+from `src/ci/tui-requirements.txt`. Windows CI runs it against both the latest
+Claude/Bun canary and Claude 2.1.272/Bun 1.4.2; the pinned case must also
+reproduce the missing CellSegmenter error with the shim disabled. Terminal
+logs, final screens and results are uploaded as CI artifacts.
+
+`src/shared/updater.test.mjs` checks that every Lean mode disables native
+background updates before loading Claude, including inherited false values.
+`src/shared/startup-check.test.mjs` checks the installer's bounded startup
+probe, version output, errors, closed stdin, paths with spaces/non-ASCII text,
+process-tree timeout cleanup, logs, and standalone version-query side effects.
+Version detection uses stdout independently of stderr and the truncated log
+tail, including split writes and interleaved/noisy diagnostics.
+It also runs the real Bun launcher when Bun is on PATH or specified through
+`CLAWGOD_TEST_BUN`. `src/windows/startup-check.test.ps1` exercises the actual
+PowerShell installer check with successful, failing and hanging child processes.
+The smoke jobs preconfigure a dummy Chat provider before the real installation,
+retain it through repeated `--no-upgrade` runs and launcher version queries,
+and reject any probe that starts a proxy listener. Windows also pins Claude
+2.1.285, the version reported in #203, alongside the existing compatibility cases.
+
+Both installers use `startup-check.cjs` (under Node) to run Bun's
+`cli.cjs --version` with a 30-second deadline. `CLAWGOD_STARTUP_TIMEOUT_MS`
+can raise that deadline on slow machines. Failures preserve the output in
+`~/.clawgod/startup-check.log` and abort before replacing launchers; printing a
+version without exiting is still a failure. A standalone `--version` or `-v`
+loads the patched bundle and runtime helpers without initializing the provider,
+migrating settings, or starting the background release check.
+
+`src/windows/launchers.test.ps1` runs the installer's launcher section on real
+Windows files, including repeated installs, restored official executables,
+running binaries, deletion/rename locks, recovery, and original backups.
+Run them with Node and Windows PowerShell 5.1 respectively; CI runs both.
+
+Every real install (not `--no-upgrade`) also replaces `claude.orig` /
+`claude.orig.exe` with the binary it extracted from. `cli.cjs` points
+`process.execPath` there, so sessions Claude spawns from it (daemon,
+background, forked) must be the same version as the patched bundle.
+`launchers.test.ps1` covers the Windows side, including a backup that is still
+running; `src/shared/native-refresh.test.mjs` runs the Unix installer section
+against a symlinked backup and checks nothing is written into `versions/`.
+
+## Layout
+
+`source-backup.json` in the installed directory stores the complete clean
+JavaScript source (entry and graph chunks) after extraction/post-processing.
+The patcher reads it before applying patches, and writes runtime source only
+if no patch failed. Fresh installs replace the snapshot; `--no-upgrade` reuses
+it. Older installations without a complete snapshot fetch the exact installed
+version once to recover clean source. `--capture-clean-source` is an installer
+operation and must only run against freshly extracted, unpatched source.
+
+`node src/shared/source-backup.test.mjs` covers repeated patching, graph and
+legacy backups, version/file-set validation, revert, and failure without source
+writes, plus Unix migration and failure propagation. The Windows preflight is
+covered by `src/windows/source-recovery.test.ps1`. CI also repeats the actual
+Unix and Windows installers and compares their patch summaries with the first
+install.
+
+- `shared/` contains payloads embedded identically in both installers,
+  including `cli.cjs` (the launcher/patcher bootstrap shared by Unix and
+  Windows). `feature-gates.cjs` carries a `{{CLAWGOD:FEATURES_META}}` marker
+  that build.js replaces with the inverted FEATURES registry from patch.mjs.
+  `bun-ant-shim.cjs` re-implements the `Bun.ant.CellSegmenter` API that Claude
+  Code 2.1.271+ renders through, since stock Bun has no `Bun.ant` namespace;
+  `cli.cjs` loads it before `cli.original.cjs`.
+- `windows/` contains genuinely platform-specific payloads (the PowerShell
+  build applies `escapeNonAscii` per file in build.js).
+- `templates/` contain the shell around those payloads and use
+  `{{CLAWGOD:<installed-name>}}` placeholders.
+
+The PowerShell template and generated installer are intentionally BOM-free and
+ASCII-only. This keeps both direct Windows PowerShell 5.1 execution and the
+documented `irm ... | iex` path independent of the machine's active code page.
+`build.js` escapes Unicode in embedded JavaScript/JSON payloads as `\uXXXX`.
+
+Do not edit the generated installers directly. If an emergency fix starts in a
+generated file, port it to the corresponding source/template immediately and
+run the build before committing.

@@ -1,0 +1,764 @@
+name: Compat Daily
+
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - build.js
+      - install.sh
+      - install.ps1
+      - src/**
+      - .github/workflows/compat-daily.yml
+      - .github/workflows/close-inactive-issues.yml
+      - .github/scripts/**
+  pull_request:
+    paths:
+      - build.js
+      - install.sh
+      - install.ps1
+      - src/**
+      - .github/workflows/compat-daily.yml
+      - .github/workflows/close-inactive-issues.yml
+      - .github/scripts/**
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  build-sources:
+    name: Generated installers are current
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Verify generated installers
+        run: node build.js --check
+
+      - name: Run AST patch regression tests
+        run: node src/shared/ast-patches.test.mjs
+
+      - name: Run patch semantic tests
+        run: node src/shared/patch.test.mjs
+
+      - name: Run clean source and repatch regression tests
+        run: node src/shared/source-backup.test.mjs
+
+      - name: Test inactive issue policy
+        run: node .github/scripts/close-inactive-issues.test.cjs
+
+      - name: Run terminal reply regression tests
+        run: node src/shared/terminal-reply.test.mjs
+
+      - name: Run Lean mode regression tests
+        run: node src/shared/lean.test.mjs
+
+      - name: Run updater environment regression tests
+        run: node src/shared/updater.test.mjs
+
+      - name: Run native binary refresh regression tests
+        run: node src/shared/native-refresh.test.mjs
+
+      - name: Run bounded startup verification regression tests
+        run: node src/shared/startup-check.test.mjs
+
+      - name: Run provider auth and proxy effort regression tests
+        run: node src/shared/provider.test.mjs
+
+      - name: Run prompt assembly regression tests
+        run: node src/shared/prompt-assembly.test.mjs
+
+      - name: Run Chat Completions protocol regression tests
+        run: node --test src/shared/openai-proxy.test.mjs
+
+      - name: Run Bun.ant shim tests
+        run: node src/shared/bun-ant-shim.test.mjs
+
+      - name: Check embedded JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in src/shared/*.mjs src/shared/*.cjs src/windows/*.mjs src/windows/*.cjs; do
+            node --check "$file"
+          done
+
+  smoke:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux smoke (x64)
+            os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+          - name: macOS smoke (ARM64)
+            os: macos-26
+            platform: macos
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      SMOKE_PLATFORM: ${{ matrix.platform }}
+      SMOKE_RUNNER: ${{ matrix.os }}
+      EXPECTED_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Set up Bun (canary)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
+
+      - name: Cache ~/.npm (claude-code-<plat> tarball)
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-claude-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+          restore-keys: |
+            npm-claude-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install ripgrep (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y ripgrep
+          rg --version | head -1
+
+      - name: Install ripgrep (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            brew install ripgrep
+          fi
+          rg --version | head -1
+
+      - name: Add ~/.local/bin to PATH (clawgod launcher install target)
+        shell: bash
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Print runtime versions
+        shell: bash
+        run: |
+          bun --version
+          node --version
+          uname -a
+          [[ "$(uname -m)" == "$EXPECTED_ARCH" ]] || { echo "::error::unexpected runner architecture"; exit 1; }
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            sw_vers
+          fi
+
+      - name: Configure a provider before fresh installation
+        run: node src/ci/provider-startup-fixture.cjs seed
+
+      - name: Run install.sh (npm-fallback path)
+        shell: bash
+        run: |
+          set -o pipefail
+          bash install.sh 2>&1 | tee /tmp/install.log
+
+      - name: Verify install artifacts
+        shell: bash
+        run: |
+          ls -la "$HOME/.clawgod/" || true
+          for f in cli.cjs cli.original.cjs startup-check.cjs startup-check.log patch.mjs extract-natives.mjs post-process.mjs feature-gates.cjs runtime-helpers.cjs bun-ant-shim.cjs .source-version; do
+            test -e "$HOME/.clawgod/$f" || { echo "::error::missing ~/.clawgod/$f"; exit 1; }
+          done
+          echo "Source: $(cat "$HOME/.clawgod/.source-version")"
+
+      - name: Assert renderer runtime was reported
+        shell: bash
+        run: |
+          grep -q 'Renderer runtime:' /tmp/install.log \
+            || { echo "::error::install.sh did not report the renderer runtime"; exit 1; }
+          grep 'Renderer runtime:' /tmp/install.log
+
+      - name: Verify Bun.ant shim provides the renderer API
+        shell: bash
+        run: |
+          bun -e '
+            require(require("os").homedir() + "/.clawgod/bun-ant-shim.cjs");
+            if (typeof Bun.ant?.CellSegmenter !== "function") {
+              console.error("::error::bun-ant-shim did not install Bun.ant.CellSegmenter");
+              process.exit(1);
+            }
+            const seg = new Bun.ant.CellSegmenter({
+              ambiguousIsNarrow: true,
+              screen: { widthMask: 3, narrow: 0, wide: 1, spacerTail: 2, spacerHead: 3, emptyCharIndex: 0, spacerCharIndex: 1, emptyWord: 0, tabWidth: 8 },
+              tabWidth: 8,
+            });
+            const cells = new Int32Array(64);
+            const runs = new Int32Array(64);
+            if (seg.segment("ab", cells, runs, false) !== 2) {
+              console.error("::error::segment() mismatch");
+              process.exit(1);
+            }
+            const screen = new Int32Array(64);
+            const charMap = new Int32Array(seg.graphemes.length);
+            if (seg.paint(screen, 8, 0, 0, cells, 2, undefined, charMap, new Int32Array(2)) === 0) {
+              console.error("::error::paint() reported no damage");
+              process.exit(1);
+            }
+            console.log("bun-ant shim: OK");
+          '
+
+      - name: Run Bun.ant shim suite under Bun
+        shell: bash
+        run: bun src/shared/bun-ant-shim.test.mjs
+
+      - name: Run Chat Completions protocol and HTTP integration tests under Bun
+        shell: bash
+        run: bun test src/shared/openai-proxy.test.mjs src/shared/openai-proxy.integration.test.mjs
+
+      - name: Verify version-only startup with a configured provider
+        shell: bash
+        run: CLAWGOD_TEST_BUN="$(command -v bun)" node src/shared/startup-check.test.mjs
+
+      - name: Verify extracted text assets under Bun
+        shell: bash
+        run: CLAWGOD_TEST_BUN="$(command -v bun)" node src/shared/post-process.test.mjs
+
+      - name: Assert all patches applied (parse install log)
+        shell: bash
+        run: |
+          line=$(grep -E 'Result: [0-9]+ applied, [0-9]+ skipped, [0-9]+ failed' /tmp/install.log | tail -1 || true)
+          echo "Patch summary: ${line:-<not found>}"
+          [[ -n "$line" ]] || { echo "::error::patch.mjs result line missing from install.sh output"; exit 1; }
+          failed=$(echo "$line" | sed -E 's/.*skipped, ([0-9]+) failed.*/\1/')
+          [[ "$failed" -eq 0 ]] || { echo "::error::patch.mjs reported $failed failed patches"; exit 1; }
+
+      - name: Verify configured provider was preserved
+        run: node src/ci/provider-startup-fixture.cjs verify /tmp/install.log
+
+      - name: Verify lean settings applied
+        shell: bash
+        run: |
+          scoped="$HOME/.clawgod/lean-settings.json"
+          [[ -f "$scoped" ]] || { echo "::error::~/.clawgod/lean-settings.json not created"; exit 1; }
+          for key in disableWorkflows disableClaudeAiConnectors disableArtifact disableRemoteControl; do
+            if ! grep -q "\"$key\"" "$scoped"; then
+              echo "::error::lean key $key missing from lean-settings.json"
+              cat "$scoped"
+              exit 1
+            fi
+          done
+          for tool in DesignSync NotebookEdit Projects; do
+            if ! grep -q "\"$tool\"" "$scoped"; then
+              echo "::error::deny tool $tool missing from lean-settings.json"
+              cat "$scoped"
+              exit 1
+            fi
+          done
+          if [[ -f "$HOME/.claude/settings.json" ]] && grep -q '"disableWorkflows"' "$HOME/.claude/settings.json"; then
+            echo "::error::shared settings.json must not carry lean keys"
+            cat "$HOME/.claude/settings.json"
+            exit 1
+          fi
+          echo "Lean settings verified:"
+          cat "$scoped"
+
+      - name: Smoke test — clawgod --version
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set +e
+          out=$(clawgod --version 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          if echo "$out" | grep -q "Expected CommonJS module to have a function wrapper"; then
+            echo "::error::Bun CJS-wrapper panic — local Bun lags the embedded Bun"
+            exit 1
+          fi
+          [[ $rc -eq 0 ]] || { echo "::error::clawgod --version exited $rc"; exit 1; }
+          if echo "$out" | grep -qi 'proxy on port'; then
+            echo '::error::version query started a provider listener'
+            exit 1
+          fi
+
+      - name: Smoke test — tool/command table probe
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set +e
+          out=$(node "$HOME/.clawgod/startup-check.cjs" "$(command -v bun)" "$HOME/.clawgod/cli.cjs" --probe-tools 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          [[ $rc -eq 0 ]] || { echo "::error::tool/command table probe exited $rc"; exit 1; }
+          if echo "$out" | grep -qE "null is not an object|l\.name|s\.isMcp"; then
+            echo "::error::null hole detected in tool/command tables"
+            exit 1
+          fi
+
+      - name: Functional checks — runtime invariants
+        shell: bash
+        run: |
+          exec_path="$HOME/.clawgod/claude.fallback"
+          [[ -f "$exec_path" ]] || { echo "::error::execPath fallback binary missing ($exec_path)"; exit 1; }
+          export CLAUDE_CODE_EXECPATH="$exec_path"
+          echo "execPath: $exec_path"
+
+          echo "── Checking fv() patched (Bun.isStandaloneExecutable → true) ──"
+          if grep -q 'Bun\.isStandaloneExecutable===!0' "$HOME/.clawgod/cli.original.cjs"; then
+            echo "::error::fv() not patched — Bun.isStandaloneExecutable===!0 still in source"
+            exit 1
+          fi
+          echo "  fv() patched: OK"
+
+          echo "── Checking process.execPath monkey-patch in wrapper ──"
+          grep -q 'CLAUDE_CODE_EXECPATH' "$HOME/.clawgod/cli.cjs" || {
+            echo "::error::cli.cjs missing CLAUDE_CODE_EXECPATH monkey-patch"
+            exit 1
+          }
+          echo "  execPath patch: OK"
+
+          echo "── Checking multitool dispatch (ugrep, bfs, rg) ──"
+          for tool in ugrep bfs rg; do
+            if ARGV0="$tool" "$exec_path" --version >/dev/null 2>&1; then
+              echo "  $tool dispatch: OK"
+            else
+              echo "::error::multitool dispatch failed for $tool via $exec_path"
+              exit 1
+            fi
+          done
+
+          echo "── Checking openai-proxy.cjs exists ──"
+          test -f "$HOME/.clawgod/openai-proxy.cjs" || { echo "::error::openai-proxy.cjs missing"; exit 1; }
+          echo "  openai-proxy.cjs: OK ($(wc -c < "$HOME/.clawgod/openai-proxy.cjs") bytes)"
+
+          echo "── All functional checks passed ──"
+
+      - name: Publish supported-Claude-version badge
+        if: success() && matrix.platform == 'linux' && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(cat "$HOME/.clawgod/.source-version")
+          [[ -n "$version" ]] || { echo "::error::source-version missing"; exit 1; }
+          tmp=$(mktemp -d)
+          cd "$tmp"
+          cat > claude-version.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "Claude tested",
+            "message": "$version",
+            "color": "brightgreen"
+          }
+          EOF
+          git init -q -b badges
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add claude-version.json
+          git commit -q -m "compat-daily: claude $version verified"
+          git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:badges
+          echo "Published badge: claude $version"
+
+      - name: Open / update issue on scheduled failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const stamp = path.join(process.env.HOME, '.clawgod', '.source-version');
+            const claudeVersion = fs.existsSync(stamp)
+              ? fs.readFileSync(stamp, 'utf8').trim()
+              : 'unknown';
+            const prefix = process.env.SMOKE_PLATFORM === 'linux'
+              ? 'compat-daily'
+              : `compat-daily/${process.env.SMOKE_PLATFORM}`;
+            const title = `${prefix}: broke (claude ${claudeVersion})`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'compat-broken',
+              per_page: 100,
+            });
+            const dup = open.find(i => i.title === title);
+            if (dup) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: dup.number,
+                body: `Re-failed ${new Date().toISOString().slice(0,10)} — ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                labels: ['compat-broken', 'bug'],
+                body: [
+                  `Daily compatibility run failed on \`${process.env.SMOKE_RUNNER}\`.`,
+                  ``,
+                  `- Claude binary: \`${claudeVersion}\``,
+                  `- Run: ${runUrl}`,
+                  ``,
+                  `Auto-opened by \`.github/workflows/compat-daily.yml\`.`,
+                ].join('\n'),
+              });
+            }
+
+  windows-smoke:
+    name: Windows smoke (PowerShell 5.1, Claude ${{ matrix.claude }})
+    runs-on: windows-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - claude: 2.1.314
+            bun: canary
+    env:
+      NPM_CONFIG_CACHE: ${{ github.workspace }}\.npm-cache
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun }}
+
+      - name: Test Windows launcher recovery and repeated installs
+        shell: powershell
+        run: ./src/windows/launchers.test.ps1
+
+      - name: Test Windows clean source recovery
+        shell: powershell
+        run: ./src/windows/source-recovery.test.ps1
+
+      - name: Test bounded startup verification and configured-provider version queries
+        shell: powershell
+        run: |
+          $env:CLAWGOD_TEST_BUN = (Get-Command bun).Source
+          node src/shared/startup-check.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./src/windows/startup-check.test.ps1
+
+      - name: Set up Python for ConPTY tests
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install terminal test dependencies
+        shell: powershell
+        run: |
+          python -m pip install -r src/ci/tui-requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Cache npm downloads
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}\.npm-cache
+          key: npm-claude-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            npm-claude-${{ runner.os }}-
+
+      - name: Install ripgrep
+        shell: powershell
+        run: |
+          if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
+            choco install ripgrep --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          rg --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Add ClawGod launcher directory to PATH
+        shell: powershell
+        run: |
+          "$env:USERPROFILE\.local\bin" |
+            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Print runtime versions
+        shell: powershell
+        run: |
+          Write-Host "PowerShell $($PSVersionTable.PSVersion)"
+          node --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rg --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify generated installers on Windows
+        shell: powershell
+        run: node build.js --check
+
+      - name: Verify Windows installer encoding
+        shell: powershell
+        run: |
+          $bytes = [System.IO.File]::ReadAllBytes("$env:GITHUB_WORKSPACE\install.ps1")
+          $nonAscii = $bytes | Where-Object { $_ -gt 0x7F } | Select-Object -First 1
+          if ($null -ne $nonAscii) {
+            Write-Error 'install.ps1 must be BOM-free ASCII for Windows PowerShell 5.1 and irm | iex'
+          }
+          $content = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if (-not $content.StartsWith('#Requires')) {
+            Write-Error 'install.ps1 must start directly with #Requires'
+          }
+
+      - name: Configure a provider before fresh installation
+        run: node src/ci/provider-startup-fixture.cjs seed
+
+      - name: Run install.ps1 through Invoke-Expression (npm-fallback path)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:RUNNER_TEMP 'install-windows.log'
+          $installerPath = "$env:GITHUB_WORKSPACE\install.ps1"
+          $installer = [System.IO.File]::ReadAllText(
+            $installerPath,
+            [System.Text.Encoding]::ASCII
+          )
+          Invoke-Expression $installer *>&1 |
+            Tee-Object -FilePath $log
+
+      - name: Verify install artifacts
+        shell: powershell
+        run: |
+          $clawDir = Join-Path $env:USERPROFILE '.clawgod'
+          Get-ChildItem -Force $clawDir
+          $required = @(
+            'cli.cjs',
+            'cli.original.cjs',
+            'startup-check.cjs',
+            'startup-check.log',
+            'patch.mjs',
+            'extract-natives.mjs',
+            'post-process.mjs',
+            'feature-gates.cjs',
+            'runtime-helpers.cjs',
+            'bun-ant-shim.cjs',
+            '.source-version'
+          )
+          foreach ($name in $required) {
+            $path = Join-Path $clawDir $name
+            if (-not (Test-Path $path)) {
+              Write-Error "Missing install artifact: $path"
+            }
+          }
+          Write-Host "Source: $((Get-Content (Join-Path $clawDir '.source-version') -Raw).Trim())"
+
+      - name: Assert renderer runtime was reported
+        shell: powershell
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'install-windows.log'
+          $line = Select-String -Path $log -Pattern 'Renderer runtime:' | Select-Object -Last 1
+          if (-not $line) {
+            Write-Error 'install.ps1 did not report the renderer runtime'
+          }
+          Write-Host $line.Line
+
+      - name: Verify Bun.ant shim provides the renderer API
+        shell: powershell
+        run: |
+          $check = Join-Path $env:RUNNER_TEMP 'bun-ant-shim-check.js'
+          $code = @'
+          require(require("os").homedir() + "/.clawgod/bun-ant-shim.cjs");
+          if (typeof Bun.ant?.CellSegmenter !== "function") {
+            console.error("bun-ant-shim did not install Bun.ant.CellSegmenter");
+            process.exit(1);
+          }
+          const seg = new Bun.ant.CellSegmenter({
+            ambiguousIsNarrow: true,
+            screen: { widthMask: 3, narrow: 0, wide: 1, spacerTail: 2, spacerHead: 3, emptyCharIndex: 0, spacerCharIndex: 1, emptyWord: 0, tabWidth: 8 },
+            tabWidth: 8,
+          });
+          const cells = new Int32Array(64);
+          const runs = new Int32Array(64);
+          if (seg.segment("ab", cells, runs, false) !== 2) {
+            console.error("segment() mismatch");
+            process.exit(1);
+          }
+          const screen = new Int32Array(64);
+          const charMap = new Int32Array(seg.graphemes.length);
+          if (seg.paint(screen, 8, 0, 0, cells, 2, undefined, charMap, new Int32Array(2)) === 0) {
+            console.error("paint() reported no damage");
+            process.exit(1);
+          }
+          console.log("bun-ant shim: OK");
+          '@
+          Set-Content -Path $check -Value $code -Encoding ASCII
+          bun $check
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error 'bun-ant shim check failed'
+          }
+
+      - name: Run Chat Completions protocol and HTTP integration tests under Bun
+        shell: powershell
+        run: |
+          bun test src/shared/openai-proxy.test.mjs src/shared/openai-proxy.integration.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify extracted text assets under Bun
+        shell: powershell
+        run: |
+          $env:CLAWGOD_TEST_BUN = (Get-Command bun).Source
+          node src/shared/post-process.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Assert all patches applied
+        shell: powershell
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'install-windows.log'
+          $summary = Select-String -Path $log `
+            -Pattern 'Result: [0-9]+ applied, [0-9]+ skipped, [0-9]+ failed' |
+            Select-Object -Last 1
+          if (-not $summary) {
+            Write-Error 'patch.mjs result line missing from install.ps1 output'
+          }
+          Write-Host "Patch summary: $($summary.Line)"
+          if ($summary.Line -notmatch 'skipped, 0 failed') {
+            Write-Error "patch.mjs reported failed patches: $($summary.Line)"
+          }
+
+      - name: Verify configured provider was preserved
+        shell: powershell
+        run: |
+          node src/ci/provider-startup-fixture.cjs verify (Join-Path $env:RUNNER_TEMP 'install-windows.log')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke test - clawgod --version
+        timeout-minutes: 1
+        shell: powershell
+        run: |
+          $launcher = Join-Path $env:USERPROFILE '.local\bin\clawgod.cmd'
+          if (-not (Test-Path $launcher)) {
+            Write-Error "Launcher missing: $launcher"
+          }
+          $previousErrorAction = $ErrorActionPreference
+          try {
+            $ErrorActionPreference = 'Continue'
+            $output = & $launcher --version 2>&1 | Out-String
+            $exitCode = $LASTEXITCODE
+          } finally {
+            $ErrorActionPreference = $previousErrorAction
+          }
+          Write-Host $output
+          if ($exitCode -ne 0) {
+            Write-Error "clawgod --version exited $exitCode"
+          }
+          if ($output -match 'proxy on port') { throw 'Version query started a provider listener' }
+
+      - name: Smoke test - tool/command table probe
+        timeout-minutes: 2
+        shell: powershell
+        run: |
+          $previousErrorAction = $ErrorActionPreference
+          try {
+            $ErrorActionPreference = 'Continue'
+            $out = & node (Join-Path $env:USERPROFILE '.clawgod\startup-check.cjs') `
+              (Get-Command bun).Source (Join-Path $env:USERPROFILE '.clawgod\cli.cjs') --probe-tools 2>&1 | Out-String
+            $rc = $LASTEXITCODE
+          } finally {
+            $ErrorActionPreference = $previousErrorAction
+          }
+          Write-Host $out
+          if ($rc -ne 0) { Write-Error "tool/command table probe exited $rc" }
+          if ($out -match 'null is not an object|l\.name|s\.isMcp') {
+            Write-Error 'null hole detected in tool/command tables'
+          }
+
+      - name: Interactive renderer regression (Windows ConPTY)
+        shell: powershell
+        run: |
+          $clawDir = Join-Path $env:USERPROFILE '.clawgod'
+          $version = (Get-Content (Join-Path $clawDir '.source-version') -Raw).Trim()
+          $fixture = Join-Path $env:RUNNER_TEMP 'tui-native'
+          node src/windows/npm-fetch.mjs "@anthropic-ai/claude-code-win32-x64@$version" $fixture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $testArgs = @(
+            'src/ci/tui-smoke.py',
+            '--cli', (Join-Path $clawDir 'cli.cjs'),
+            '--bun', (Get-Command bun).Source,
+            '--native', (Join-Path $fixture 'package\claude.exe'),
+            '--version', $version,
+            '--output', (Join-Path $env:RUNNER_TEMP 'tui-artifacts')
+          )
+          python @testArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload terminal regression evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-tui-${{ matrix.claude }}
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/tui-artifacts/*.log
+            ${{ runner.temp }}/tui-artifacts/*.txt
+            ${{ runner.temp }}/tui-artifacts/*.json
+
+      - name: Open or update issue on scheduled failure
+        if: failure() && github.event_name == 'schedule' && matrix.claude == '2.1.314'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const stamp = path.join(process.env.USERPROFILE, '.clawgod', '.source-version');
+            const claudeVersion = fs.existsSync(stamp)
+              ? fs.readFileSync(stamp, 'utf8').trim()
+              : 'unknown';
+            const title = `compat-daily/windows: broke (claude ${claudeVersion})`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'compat-broken',
+              per_page: 100,
+            });
+            const dup = open.find(i => i.title === title);
+            if (dup) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: dup.number,
+                body: `Re-failed ${new Date().toISOString().slice(0,10)} - ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                labels: ['compat-broken', 'bug'],
+                body: [
+                  `Daily compatibility run failed on \`windows-latest\`.`,
+                  ``,
+                  `- Claude binary: \`${claudeVersion}\``,
+                  `- Run: ${runUrl}`,
+                  ``,
+                  `Auto-opened by \`.github/workflows/compat-daily.yml\`.`,
+                ].join('\n'),
+              });
+            }
