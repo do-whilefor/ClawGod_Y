@@ -21,9 +21,9 @@ ClawGod_Y は公式 [Claude Code](https://docs.anthropic.com/en/docs/claude-code
 
 パッチの実装は [0Chencc/clawgod](https://github.com/0Chencc/clawgod) を参考にしています。オープンソース化してくれた原プロジェクトに感謝します。本フォークは上流のクロスバージョン対応パッチアーキテクチャを維持し、パッチ済みランタイムを独立してインストールします：
 
-- **`clawgod` がパッチ済みの Claude Code を起動します（v2.1.314 に固定）。** パッチ済みランタイムはすべて `~/.clawgod`（Windows では `%USERPROFILE%\.clawgod`）に格納されます。
+- **`clawgod` がパッチ済みの Claude Code を起動します（デフォルトで v2.1.314 をインストール）。** パッチ済みランタイムはすべて `~/.clawgod`（Windows では `%USERPROFILE%\.clawgod`）に格納されます。
 - **Claude Code がすでにインストールされている場合、既存の `claude` コマンドは変更されません。** 公式 Claude Code の事前インストールは不要です。既存のオリジナルの `claude update` は通常どおり動作します。
-- **バージョンをまたぐ互換性を考慮した設計。** パッチはクロスバージョンのアンカーを使用し、他の Claude Code バージョンにも適合させられますが、すべてのバージョンでの互換性は保証しません。現在のインストーラは v2.1.314 のみをインストールします。必須でないパッチが一致しない場合は警告してスキップしますが、必須のプロンプト注入やソース処理に失敗した場合はインストールを中止します。
+- **バージョンをまたぐ互換性を考慮した設計。** パッチはクロスバージョンのアンカーを使用し、他の Claude Code バージョンにも適合させられますが、すべてのバージョンでの互換性は保証しません。インストール時に `latest`、`stable`、または具体的なバージョン番号を選択できます。必須でないパッチが一致しない場合は警告してスキップしますが、必須のプロンプト注入やソース処理に失敗した場合はインストールを中止します。
 - **ペンテスト向けパッチ**：ツールの権限プロンプトと安全分類器をデフォルトでバイパスし、プロンプトを許可されたテストの文脈に書き換え、不要なオフィス／コンシューマー機能を削除します。
 
 ## 使用方法
@@ -43,14 +43,16 @@ ClawGod_Y は公式 [Claude Code](https://docs.anthropic.com/en/docs/claude-code
 **macOS / Linux / WSL：**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh | bash -s -- latest
 ```
 
 **Windows PowerShell：**
 
 ```powershell
-irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1))) latest
 ```
+
+例の `latest` を `stable` または具体的なバージョン番号（例：`2.1.314`）に置き換えることで、バージョンを選択できます。`latest` と `stable` は、それぞれ npm の対応するタグのバージョンを使用します。
 
 インストール後、新しいターミナルを開き、`clawgod` でパッチ済み Claude を起動してください。公式 Claude Code がすでにインストールされていた場合は、引き続き `claude` でオリジナルを起動できます。パッチ済みランタイムは `~/.clawgod`（Windows では `%USERPROFILE%\.clawgod`）に保存されます。
 
