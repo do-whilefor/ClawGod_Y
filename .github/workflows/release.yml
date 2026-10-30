@@ -9,13 +9,19 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  smoke:
+    name: Release smoke (Claude ${{ matrix.claude }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        claude: ['2.1.314', stable, latest]
+    env:
+      CLAUDE_CHANNEL: ${{ matrix.claude }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Set up Node.js 24
         uses: actions/setup-node@v5
@@ -38,10 +44,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export HOME="$RUNNER_TEMP/release-home"
-          mkdir -p "$HOME"
-          bash install.sh >/tmp/release-install.log 2>&1 || { cat /tmp/release-install.log; exit 1; }
+          version=$(npm view "@anthropic-ai/claude-code@$CLAUDE_CHANNEL" version)
+          echo "Testing Claude $CLAUDE_CHANNEL -> $version"
+          sed "s/^VERSION=\"[^\"]*\"/VERSION=\"$version\"/" install.sh > "$RUNNER_TEMP/install.sh"
+          bash "$RUNNER_TEMP/install.sh" >/tmp/release-install.log 2>&1 || { cat /tmp/release-install.log; exit 1; }
+          installed=$(cat "$HOME/.clawgod/.source-version")
+          [[ "$installed" == "$version" ]] || { echo "::error::expected Claude $version, installed $installed"; exit 1; }
           node "$HOME/.clawgod/startup-check.cjs" "$(command -v bun)" "$HOME/.clawgod/cli.cjs" --probe-tools
+
+  release:
+    needs: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Resolve versions
         id: versions

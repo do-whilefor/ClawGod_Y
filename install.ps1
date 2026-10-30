@@ -1720,7 +1720,10 @@ const REFUSAL_DIRECTIVE = new RegExp(
   '(?:i must|i have to|i need to|i will)\\s+(?:decline|refuse)|' +
   '(?:do not|don\'t|never)\\s+(?:assist|help|comply)\\s+with|' +
   '(?:violates?|against|contrary to)\\s+(?:my|the)?\\s*(?:guidelines|policies|values|principles|usage policy|terms of use)|' +
-  '(?:this|that)\\s+(?:is|would be)\\s+(?:illegal|unethical|harmful|malicious|dangerous|unauthorized|a violation))', 'i');
+  '(?:this|that)\\s+(?:is|would be)\\s+(?:illegal|unethical|harmful|malicious|dangerous|unauthorized|a violation)|' +
+  'i\\s+(?:will|would|shall|\'m going to)\\s+(?:not\\s+)?(?:refuse|decline)\\b|' +
+  'i\\s+(?:cannot|can\'t|won\'t|will not|would not)\\s+(?:assist|help|comply|provide|generate|create|write|produce)\\b|' +
+  '(?:i\\s+am|i\'m)\\s+(?:unable|not able)\\s+to\\s+(?:assist|help|comply|provide|generate|create|write|produce)\\b)', 'i');
 
 const RESEARCH_CONTEXT = new RegExp(
   '(?:' +
@@ -1728,7 +1731,7 @@ const RESEARCH_CONTEXT = new RegExp(
   'ctf|capture the flag|security research|security assessment|security audit|' +
   'threat model|attack surface|attack vector|payload|fuzz(?:ing)?|' +
   'reverse engineer|malware analysis|incident response|' +
-  'authorized|in-scope|scope of (?:the )?(?:engagement|work|assessment)|' +
+  '\\bauthorized\\b|in-scope|scope of (?:the )?(?:engagement|work|assessment)|' +
   'remediation|proof of concept|poc|0day|zero-day|CVE-\\d|' +
   'recon(?:naissance)?|osint|nmap|burp|metasploit|hydra|sql injection|xss|csrf|' +
   'privilege escalation|lateral movement|pivot|exfiltration|c2|command and control|' +
@@ -1757,6 +1760,17 @@ const CAUTION_POSTURE = new RegExp(
   'exercise caution|exercise care|use caution when|be careful when|be cautious when|' +
   'caution is advised|discretion is advised|care should be taken)', 'i');
 
+const SOFT_CAUTION_CUE = /\b(?:(?:please\s+)?(?:make\s+sure|ensure|verify|double[\s-]?check)|(?:be|stay|remain)\s+(?:mindful|aware|vigilant)\s+(?:of|about)|you\s+(?:may|might)\s+want\s+to|it(?:'s| is)\s+(?:recommended|advisable|a good idea)\s+to|think\s+(?:about|through)\s+(?:whether|how|if)|before\s+(?:you\s+)?(?:proceed|proceeding|continue|continuing|act|acting|run|running|execute|executing|delete|deleting|modify|modifying))\b/i;
+// Polite wording needs an authorization, legal, or risk-acceptance requirement.
+const CAUTION_REQUIREMENT = new RegExp([
+  /\b(?:you(?:'re|\s+are)|(?:the\s+)?user\s+is)\s+(?:(?:properly|explicitly|fully)\s+)?(?:authorized|permitted)\b/,
+  /\b(?:you|(?:the\s+)?user)\s+(?:have|has)\s+(?:(?:the|necessary|proper|explicit|written|prior)\s+)*(?:permission|authorization|approval|consent)\b/,
+  /\b(?:permission|authorization|approval|consent)\s+(?:from\s+(?:the\s+)?(?:user|owner|administrator)|(?:is|has\s+been)\s+(?:granted|obtained|received|given))\b/,
+  /\b(?:legal|ethical)\s+(?:implications|requirements|consequences|concerns|considerations)|\b(?:legality|lawfulness)\b|\b(?:comply|compliant|compliance)\s+with\s+(?:(?:all|applicable|local|relevant|the)\s+)*(?:laws?|regulations?)\b/,
+  /\b(?:understand|acknowledge|accept|consider|weigh|evaluate|assess)\s+(?:(?:the|any|all|potential|associated|possible)\s+)*(?:risks?|consequences)\b/,
+  /\b(?:be|stay|remain)\s+(?:mindful|aware|vigilant)\s+(?:of|about)\s+(?:(?:the|any|potential|associated|possible)\s+)*(?:risks?|dangers?|consequences)\b/,
+].map(pattern => pattern.source).join('|'), 'i');
+
 const SECURITY_NOUN = new RegExp(
   '(?:' +
   'cyber-attack|cyber-crime|cybercrime|malware|ransomware|phishing|keylogger|botnet|social engineering|' +
@@ -1767,37 +1781,61 @@ const SECURITY_NOUN = new RegExp(
   'ethical\\s+(?:concerns|implications|boundaries)|' +
   'malicious\\s+(?:code|activity|purposes|intent|software))', 'i');
 
-const REFUSAL_MARKER = /(?:\b(?:do not|don't|never|must not|should not|refuse|decline|avoid)\b)/i;
-function sectionDropped(section) {
-  if (REFUSAL_DIRECTIVE.test(section)) return true;
-  if (RESEARCH_CONTEXT.test(section)) return false;
-  if (CAUTION_POSTURE.test(section)) return true;
-  if (SECURITY_NOUN.test(section) && REFUSAL_MARKER.test(section)) return true;
+const FORCED_DROP = new RegExp(
+  '(?:' +
+  '(?:be careful not to|avoid|never|do not|don\'t|must not|should not)\\s+(?:introduc\\w+|creat\\w+|add\\w*|generat\\w+|produc\\w+)\\s+(?:any\\s+)?security\\s+vulnerabilit\\w*|' +
+  'introduc\\w+\\s+security\\s+vulnerabilit\\w*|' +
+  'security\\s+vulnerabilit\\w+\\s+(?:in|into|within)\\s+(?:the\\s+)?(?:code|codebase|generated\\s+code|output))', 'i');
+
+const REFUSAL_MARKER = /(?:\b(?:do not|don't|never|must not|should not|shall not|refuse|decline|avoid|refrain|abstain|hesitate|unable|cannot|can't|won't|will not|would not|forbid|prohibit(?:s|ed|ing)?|disallow(?:s|ed|ing)?|deny|denies|denied|denying|reject(?:s|ed|ing)?)\b)/i;
+function sentenceDropped(sentence) {
+  if (FORCED_DROP.test(sentence)) return true;
+  if (REFUSAL_DIRECTIVE.test(sentence)) return true;
+  if (SOFT_CAUTION_CUE.test(sentence) && CAUTION_REQUIREMENT.test(sentence)) return true;
+  if (RESEARCH_CONTEXT.test(sentence)) return false;
+  if (CAUTION_POSTURE.test(sentence)) return true;
+  if (SECURITY_NOUN.test(sentence) && REFUSAL_MARKER.test(sentence)) return true;
   return false;
 }
 
 
 const CUSTOM_PROMPT_MARK = 'clawgod:custom-prompt';
 
-const HOST_IDENTITY_MARKERS = [
-  'you are claude code',
-  'you are an interactive cli agent',
-  'you are an interactive cli tool',
-  'you are claude,',
-  'you are claude.',
-  'you are claude ',
-  'i am claude',
-  'i\'m claude',
-  'my name is claude',
-  'this is claude',
-  'assistant name:',
-  'model name:',
-];
+const HOST_IDENTITY_NAMES = /claude(?:[\s_-]*code)?|anthropic|\u514b\u52b3\u5fb7|\u514b\u52de\u5fb7|\u30af\u30ed\u30fc\u30c9|\u30a2\u30f3\u30bd\u30ed\u30d4\u30c3\u30af|\ud074\ub85c\ub4dc|\uc564\ud2b8\ub85c\ud53d|\u043a\u043b\u043e\u0434|\u0430\u043d\u0442\u0440\u043e\u043f\u0438\u043a|\u0643\u0644\u0648\u062f|\u0623\u0646\u062b\u0631\u0648\u0628\u064a\u0643|\u0627\u0646\u062b\u0631\u0648\u0628\u064a\u0643|\u0915\u094d\u0932\u0949\u0921|\u090f\u0902\u0925\u094d\u0930\u094b\u092a\u093f\u0915/iu;
+const HOST_IDENTITY_ROLES = /\b(?:ai|llm|assistant|agent|chatbot|tool|language\s+model|artificial\s+intelligence)\b|\u4eba\u5de5\u667a\u80fd|\u4eba\u5de5\u667a\u6167|(?:\u5927(?:\u578b)?(?:\u8bed\u8a00|\u8a9e\u8a00)|\u8bed\u8a00|\u8a9e\u8a00)\u6a21\u578b|(?:\u7f16\u7a0b|\u7de8\u7a0b|\u7f16\u7801|\u7de8\u78bc|\u667a\u80fd)?\u52a9\u624b|\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8|\u4eba\u5de5\u77e5\u80fd|\u8a00\u8a9e\u30e2\u30c7\u30eb|\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8|\uc778\uacf5\s*\uc9c0\ub2a5|\uc5b8\uc5b4\s*\ubaa8\ub378|\uc5b4\uc2dc\uc2a4\ud134\ud2b8|\ub3c4\uc6b0\ubbf8|\uc5d0\uc774\uc804\ud2b8|\b(?:assistant(?:e)?|agent|mod\u00e8le|intelligence\s+artificielle|asistente|modelo|inteligencia\s+artificial|assistent(?:in)?|sprachmodell|ki|k\u00fcnstliche\s+intelligenz|assistente|modello|intelligenza\s+artificiale|intelig\u00eancia\s+artificial|ia)\b|\u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043d\u0442|\u043f\u043e\u043c\u043e\u0449\u043d\u0438\u043a|\u044f\u0437\u044b\u043a\u043e\u0432(?:\u0430\u044f|\u043e\u0439|\u0443\u044e)\s+\u043c\u043e\u0434\u0435\u043b(?:\u044c|\u044c\u044e|\u0438)|\u0438\u0441\u043a\u0443\u0441\u0441\u0442\u0432\u0435\u043d\u043d(?:\u044b\u0439|\u044b\u043c|\u043e\u0433\u043e)\s+\u0438\u043d\u0442\u0435\u043b\u043b\u0435\u043a\u0442|\u0645\u0633\u0627\u0639\u062f|\u0646\u0645\u0648\u0630\u062c\s+\u0644\u063a\u0648\u064a|\u0630\u0643\u0627\u0621\s+\u0627\u0635\u0637\u0646\u0627\u0639\u064a|\u090f\u0906\u0908|\u0938\u0939\u093e\u092f\u0915|\u092d\u093e\u0937\u093e\s+\u092e\u0949\u0921\u0932|\u0915\u0943\u0924\u094d\u0930\u093f\u092e\s+\u092c\u0941\u0926\u094d\u0927\u093f\u092e\u0924\u094d\u0924\u093e/iu;
+const HOST_IDENTITY_DECLARATION = new RegExp('(?:' + [
+  /\b(?:you\s+are|you're|i\s+am|i'm|we\s+are|we're|this\s+is|(?:this\s+|the\s+)?(?:assistant|model|agent|system)\s+is|as)\s+(?:(?:an?|the|helpful|intelligent|advanced|large|coding|interactive|conversational|cli|ai)\s+)*/,
+  /(?:\u4f60|\u60a8|\u6211|\u6211\u4eec|\u6211\u5011|\u672c(?:\u52a9\u624b|\u6a21\u578b|\u7cfb\u7edf|\u7cfb\u7d71)|\u6b64(?:\u52a9\u624b|\u6a21\u578b|\u7cfb\u7edf|\u7cfb\u7d71)|\u52a9\u624b|\u6a21\u578b)\s*(?:\u662f|\u4e3a|\u70ba|\u53eb|\u540d\u4e3a|\u540d\u70ba)\s*(?:(?:\u4e00[\u4e2a\u500b\u540d\u4f4d]|\u6709\u7528\u7684|\u667a\u80fd\u7684)\s*)*|(?:\u4f5c\u4e3a|\u4f5c\u70ba)\s*(?:\u4e00[\u4e2a\u500b\u540d\u4f4d]\s*)?/,
+  /(?:\u79c1|\u308f\u305f\u3057|\u3042\u306a\u305f|\u3053\u306e(?:\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8|\u30e2\u30c7\u30eb|\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8))\s*\u306f\s*(?:(?:\u4fbf\u5229\u306a|\u9ad8\u5ea6\u306a|\u5bfe\u8a71\u578b\u306e)\s*)*/,
+  /(?:\uc800|\ub098|\ub2f9\uc2e0|\uc774\s*(?:\uc5b4\uc2dc\uc2a4\ud134\ud2b8|\ubaa8\ub378|\uc5d0\uc774\uc804\ud2b8))(?:\ub294|\uc740)\s*(?:(?:\uc720\uc6a9\ud55c|\ub300\ud654\ud615|\uace0\uae09)\s+)*/,
+  /\b(?:je\s+suis|tu\s+es|vous\s+\u00eates|cet\s+assistant\s+est|en\s+tant\s+que)\s+(?:(?:un|une|le|la|grand|grande)\s+)*/,
+  /\b(?:ich\s+bin|du\s+bist|sie\s+sind|dieser\s+assistent\s+ist|als)\s+(?:(?:ein|eine|der|die|das|hilfreicher|intelligenter|gro\u00dfes)\s+)*/,
+  /\b(?:yo\s+soy|soy|t\u00fa\s+eres|eres|usted\s+es|este\s+asistente\s+es|como)\s+(?:(?:un|una|el|la|gran)\s+)*/,
+  /\b(?:eu\s+sou|sou|voc\u00ea\s+\u00e9|tu\s+\u00e9s|este\s+assistente\s+\u00e9|como)\s+(?:(?:um|uma|o|a|grande)\s+)*/,
+  /\b(?:io\s+sono|sono|tu\s+sei|sei|questo\s+assistente\s+\u00e8|come)\s+(?:(?:un|una|uno|il|la|grande)\s+)*/,
+  /(?:^|[^\p{L}\p{N}])(?:\u044f|\u0442\u044b|\u0432\u044b|\u044d\u0442\u043e\u0442\s+\u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043d\u0442)\s+(?:(?:\u044f\u0432\u043b\u044f\u044e\u0441\u044c|\u044f\u0432\u043b\u044f\u0435\u0448\u044c\u0441\u044f|\u044f\u0432\u043b\u044f\u0435\u0442\u0435\u0441\u044c|\u044d\u0442\u043e)\s+)?/,
+  /(?:\u0623\u0646\u0627|\u0627\u0646\u0627|\u0623\u0646\u062a|\u0627\u0646\u062a|\u0647\u0630\u0627\s+\u0627\u0644\u0645\u0633\u0627\u0639\u062f)\s+(?:(?:\u0647\u0648|\u0647\u064a)\s+)?/,
+  /(?:\u092e\u0948\u0902|\u0906\u092a|\u092f\u0939\s+\u0938\u0939\u093e\u092f\u0915)\s+(?:(?:\u090f\u0915|\u0909\u0928\u094d\u0928\u0924)\s+)*/,
+].map(pattern => pattern.source).join('|') + ')[\\s:\uff1a=\u2014\u2013-]*(?:' + HOST_IDENTITY_NAMES.source + '|' + HOST_IDENTITY_ROLES.source + ')', 'iu');
 
-const HOST_IDENTITY_NAMES = /\bclaude(?:\s+code)?\b/;
-const HOST_IDENTITY_ATTRIBUTION = /\banthropic\b|\bofficial\b|\bbuilt by\b|\bmade by\b|\bdeveloped by\b|\bcreated by\b|\btrained by\b|\bprovided by\b|\blanguage model\b/;
+const HOST_IDENTITY_LABEL = new RegExp([
+  /\b(?:(?:my|your|our)\s+name\s+is|call\s+me)\b|\b(?:assistant|model|agent|system)\s+(?:name|identity|id)\s*[:=]/,
+  /(?:\u6211|\u4f60|\u60a8|\u52a9\u624b|\u6a21\u578b|\u7cfb\u7edf|\u7cfb\u7d71)\u7684?(?:\u540d\u5b57|\u540d\u79f0|\u540d\u7a31|\u8eab\u4efd|\u540d)\s*(?:\u662f|\u4e3a|\u70ba|[:=\uff1a])/,
+  /(?:\u79c1|\u3042\u306a\u305f)\u306e\u540d\u524d\u306f|(?:\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8\u540d|\u30e2\u30c7\u30eb\u540d)\s*[:=]|(?:\uc81c|\ub0b4|\ub2f9\uc2e0\uc758)\s*\uc774\ub984\uc740|(?:\uc5b4\uc2dc\uc2a4\ud134\ud2b8|\ubaa8\ub378)\s*(?:\uc774\ub984|\uba85)\s*[:=]/,
+  /\b(?:je\s+m'appelle|tu\s+t'appelles|mein\s+name\s+ist|dein\s+name\s+ist|me\s+llamo|te\s+llamas|meu\s+nome\s+\u00e9|seu\s+nome\s+\u00e9|mi\s+chiamo|il\s+tuo\s+nome\s+\u00e8)(?![\p{L}\p{N}])/,
+  /\b(?:nom\s+(?:de\s+l'assistant|du\s+mod\u00e8le)|(?:assistenten|modell)(?:name|identit\u00e4t)|nombre\s+del\s+(?:asistente|modelo)|nome\s+(?:do|del)\s+(?:assistente|modelo|modello))\s*[:=]/,
+  /(?:\u043c\u0435\u043d\u044f|\u0442\u0435\u0431\u044f|\u0432\u0430\u0441)\s+\u0437\u043e\u0432\u0443\u0442|(?:\u0438\u043c\u044f|\u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435|\u0438\u0434\u0435\u043d\u0442\u0438\u0447\u043d\u043e\u0441\u0442\u044c)\s+(?:\u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043d\u0442\u0430|\u043c\u043e\u0434\u0435\u043b\u0438)\s*[:=]/,
+  /(?:\u0627\u0633\u0645\u064a|\u0627\u0633\u0645\u0643)\s|\u0627\u0633\u0645\s+(?:\u0627\u0644\u0645\u0633\u0627\u0639\u062f|\u0627\u0644\u0646\u0645\u0648\u0630\u062c)\s*[:=]|(?:\u092e\u0947\u0930\u093e|\u0906\u092a\u0915\u093e)\s+\u0928\u093e\u092e|(?:\u0938\u0939\u093e\u092f\u0915|\u092e\u0949\u0921\u0932)\s+\u0915\u093e\s+\u0928\u093e\u092e\s*[:=]/,
+].map(pattern => pattern.source).join('|'), 'iu');
+const HOST_IDENTITY_ATTRIBUTION = /\b(?:by|from|built|made|developed|created|trained|provided|official|copyright|trademark)\b|\u00a9|\(c\)|\u5f00\u53d1|\u958b\u767c|\u63d0\u4f9b|\u6784\u5efa|\u69cb\u5efa|\u6253\u9020|\u51fa\u54c1|\u8bad\u7ec3|\u8a13\u7df4|\u7248\u6743|\u7248\u6b0a|\u5546\u6807|\u5546\u6a19|\u958b\u767a|\u4f5c\u6210|\u8a13\u7df4|\u516c\u5f0f|\u8457\u4f5c\u6a29|\uac1c\ubc1c|\uc81c\uacf5|\ud6c8\ub828|\uacf5\uc2dd|\uc800\uc791\uad8c|\b(?:d\u00e9velopp\u00e9|cr\u00e9\u00e9|entra\u00een\u00e9|fourni|officiel|entwickelt|erstellt|trainiert|bereitgestellt|offiziell|desarrollado|creado|entrenado|proporcionado|oficial|desenvolvido|criado|treinado|fornecido|sviluppato|creato|addestrato|fornito|ufficiale)\b|\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0430\u043d|\u0441\u043e\u0437\u0434\u0430\u043d|\u043e\u0431\u0443\u0447\u0435\u043d|\u043f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d|\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d|\u0430\u0432\u0442\u043e\u0440\u0441\u043a|\u062a\u0637\u0648\u064a\u0631|\u0637\u0648\u0631\u062a\u0647|\u0625\u0646\u0634\u0627\u0621|\u062a\u062f\u0631\u064a\u0628|\u0631\u0633\u0645\u064a|\u062d\u0642\u0648\u0642|\u0935\u093f\u0915\u0938\u093f\u0924|\u0928\u093f\u0930\u094d\u092e\u093f\u0924|\u092a\u094d\u0930\u0936\u093f\u0915\u094d\u0937\u093f\u0924|\u0906\u0927\u093f\u0915\u093e\u0930\u093f\u0915/iu;
+const HOST_IDENTITY_METADATA = /\bmy\s+(?:capabilities|training|knowledge\s+cutoff|training\s+data|limitations)\b|\b(?:i\s+am|i'm)\s+here\s+to\s+(?:help|assist)\b|\u6211\u7684(?:\u80fd\u529b|\u8bad\u7ec3|\u8a13\u7df4|\u77e5\u8bc6\u622a\u6b62|\u77e5\u8b58\u622a\u6b62|\u5c40\u9650)|\u6211\u5728\u8fd9\u91cc(?:\u4e3a\u4f60)?(?:\u63d0\u4f9b\u5e2e\u52a9|\u534f\u52a9|\u5e2e\u5fd9)|\u79c1\u306e(?:\u80fd\u529b|\u8a13\u7df4|\u77e5\u8b58|\u5236\u9650)|\uc81c\s*(?:\ub2a5\ub825|\ud559\uc2b5|\uc9c0\uc2dd|\ud55c\uacc4)|\b(?:mes\s+(?:capacit\u00e9s|limites)|meine\s+(?:f\u00e4higkeiten|grenzen)|mis\s+(?:capacidades|limitaciones)|minhas\s+(?:capacidades|limita\u00e7\u00f5es)|le\s+mie\s+(?:capacit\u00e0|limitazioni))\b|\u043c\u043e\u0438\s+(?:\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0441\u0442\u0438|\u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u044f)|(?:\u0642\u062f\u0631\u0627\u062a\u064a|\u062a\u062f\u0631\u064a\u0628\u064a|\u062d\u062f\u0648\u062f\u064a)|\u092e\u0947\u0930\u0940\s+(?:\u0915\u094d\u0937\u092e\u0924\u093e\u090f\u0902|\u0915\u094d\u0937\u092e\u0924\u093e\u090f\u0901|\u0938\u0940\u092e\u093e\u090f\u0902|\u0938\u0940\u092e\u093e\u090f\u0901)/iu;
+const HOST_IDENTITY_ROLE_SUFFIX = new RegExp('(?:' + HOST_IDENTITY_NAMES.source + '|' + HOST_IDENTITY_ROLES.source + ')\\s*(?:\u3067\u3059|\u3067\u3042\u308b|\u3068\u3057\u3066|\uc785\ub2c8\ub2e4|\uc774\uc5d0\uc694|\uc608\uc694|\ub85c\uc11c|\uc73c\ub85c\uc11c|\u0939\u0942\u0901|\u0939\u0948)', 'iu');
+const HOST_IDENTITY_BARE = new RegExp('^[\\s#>*_"\'`(]*(?:' + HOST_IDENTITY_NAMES.source + ')(?:[\\s\\d._:()\u00a9\u00ae\u2122-]|sonnet|opus|haiku|code|assistant)*[.!?\u3002\uff01\uff1f]*$', 'iu');
 
-const HOST_IDENTITY_BARE_DECLARATION = /^(?:i am|i'm|my name is|this is|the assistant is|the model is|assistant is|model is)\s+claude\b/;
+function normalizeIdentityText(text) {
+  return text.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/[\u2018\u2019\u02bc]/g, "'").replace(/[*_`~]/g, '')
+    .toLowerCase().replace(/\s+/g, ' ').trim();
+}
 
 const MEMORY_SECTION_TITLES = [
   '# auto memory',
@@ -1810,9 +1848,9 @@ function assemblyConfig(snapshot) {
   const cfg = snapshot && typeof snapshot === 'object' ? snapshot : {};
   const customPrompt = typeof cfg.customPrompt === 'string' ? cfg.customPrompt.trim() : '';
   const stripMemory = cfg.stripMemory !== false;
-  const identityMarkers = Array.isArray(cfg.identityMarkers) && cfg.identityMarkers.length
-    ? cfg.identityMarkers.filter(m => typeof m === 'string' && m.length)
-    : HOST_IDENTITY_MARKERS;
+  const identityMarkers = Array.isArray(cfg.identityMarkers)
+    ? [...new Set(cfg.identityMarkers.filter(m => typeof m === 'string').map(normalizeIdentityText).filter(Boolean))]
+    : [];
   return { customPrompt, stripMemory, identityMarkers };
 }
 
@@ -1879,52 +1917,30 @@ const isMemorySection = section => {
   return MEMORY_SECTION_TITLES.some(title => head.startsWith(title));
 };
 
-function stripIdentityFingerprint(line) {
-  const tryStripSentence = (sentence) => {
-    const lower = sentence.toLowerCase();
-    if (HOST_IDENTITY_NAMES.test(lower) && HOST_IDENTITY_ATTRIBUTION.test(lower)) return '';
-    const trimmed = lower.trimStart();
-    if (HOST_IDENTITY_BARE_DECLARATION.test(trimmed)) return '';
-    return sentence;
-  };
-  if (line.indexOf('.') < 0) {
-    return tryStripSentence(line);
-  }
-  const sentences = line.split('.');
-  const kept = [];
-  let changed = false;
-  for (const sentence of sentences) {
-    const stripped = tryStripSentence(sentence);
-    if (stripped === '' && sentence.trim() !== '') { changed = true; continue; }
-    kept.push(stripped);
-  }
-  if (!changed) return line;
-  return kept.join('.').replace(/\.{2,}/g, '.').replace(/^[.\s]+/, '').trimEnd();
-}
-
-function stripHostIdentity(section, markers = HOST_IDENTITY_MARKERS) {
+function filterPromptSection(section, markers = []) {
   if (typeof section !== 'string') return section;
   const lines = section.split('\n');
   const kept = [];
   let changed = false;
   for (const line of lines) {
-    let rest = line;
-    for (;;) {
-      const lower = rest.trimStart().toLowerCase();
-      const marker = markers.find(m => lower.startsWith(m));
-      if (!marker) break;
-      const period = rest.indexOf('.');
-      rest = period >= 0 ? rest.slice(period + 1).trim() : '';
-      changed = true;
-      if (!rest) break;
+    // Decimal points remain inside sentences; CJK and RTL punctuation can end them.
+    const sentences = line.split(/(?<=[\u3002\uff61\uff01\uff1f\uff1b\u061b;\u061f\u06d4\u0964\u0965])|(?<=[.\uff0e\ufe52!?])(?=\s|$)/u);
+    const rest = [];
+    for (const sentence of sentences) {
+      const text = normalizeIdentityText(sentence);
+      const drop = sentenceDropped(text) ||
+        HOST_IDENTITY_DECLARATION.test(text) || HOST_IDENTITY_LABEL.test(text) ||
+        HOST_IDENTITY_METADATA.test(text) || HOST_IDENTITY_ROLE_SUFFIX.test(text) ||
+        HOST_IDENTITY_BARE.test(text) ||
+        (HOST_IDENTITY_NAMES.test(text) && HOST_IDENTITY_ATTRIBUTION.test(text)) ||
+        markers.some(marker => text.includes(marker));
+      if (drop) { changed = true; continue; }
+      rest.push(sentence);
     }
-    if (!rest) continue;
-    const swept = stripIdentityFingerprint(rest);
-    if (swept !== rest) changed = true;
-    if (swept) kept.push(swept);
+    kept.push(rest.join(''));
   }
   if (!changed) return section;
-  return kept.join('\n').trim();
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function rewritePromptAssembly(sections, options) {
@@ -1947,9 +1963,8 @@ function rewritePromptAssembly(sections, options) {
       let section = original;
       if (isCustomSection(section)) { changed = true; continue; }
       if (cfg.stripMemory && isMemorySection(section)) { changed = true; continue; }
-      if (typeof section === 'string' && sectionDropped(section)) { changed = true; continue; }
-      if (hasCustom && typeof section === 'string') {
-        const stripped = stripHostIdentity(section, cfg.identityMarkers);
+      if (typeof section === 'string') {
+        const stripped = filterPromptSection(section, cfg.identityMarkers);
         if (stripped !== section) {
           section = stripped;
           changed = true;
@@ -8842,25 +8857,56 @@ const anchors = ['external', 'isStandaloneExecutable', 'environmentOverridesPars
   'isEnabled', 'enabled', 'ultrareview', 'amber_flint', 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS',
   '[Tool result missing due to internal error]'];
 const gate = id => `globalThis.__clawgodPatches?.[${JSON.stringify(id)}]!==!1`;
-const literal = (node, value) => node?.type === 'Literal' && node.value === value;
+function staticText(node, budget = 32) {
+  if (!node || budget <= 0) return;
+  if (node.type === 'Literal') return typeof node.value === 'string' ? node.value : undefined;
+  if (node.type === 'BinaryExpression' && node.operator === '+') {
+    const left = staticText(node.left, budget - 1), right = staticText(node.right, budget - 1);
+    if (left !== undefined && right !== undefined) return left + right;
+  }
+  if (node.type === 'TemplateLiteral') {
+    let text = node.quasis[0].value.cooked;
+    if (typeof text !== 'string') return;
+    for (let i = 0; i < node.expressions.length; i++) {
+      const value = staticText(node.expressions[i], budget - 1), tail = node.quasis[i + 1].value.cooked;
+      if (value === undefined || typeof tail !== 'string') return;
+      text += value + tail;
+    }
+    return text;
+  }
+}
+const literal = (node, value) => typeof value === 'string' ? staticText(node) === value
+  : node?.type === 'Literal' && node.value === value;
 const propertyName = node => node.computed
-  ? (node.key?.type === 'Literal' ? node.key.value : undefined)
+  ? (staticText(node.key) ?? (node.key?.type === 'Literal' ? node.key.value : undefined))
   : (node.key?.name ?? node.key?.value);
 const member = (node, name) => node?.type === 'MemberExpression' &&
   (node.computed ? literal(node.property, name) : node.property.name === name);
 const thisMember = (node, name) => member(node, name) && node.object.type === 'ThisExpression';
-const boolean = (node, value) => literal(node, value) ||
-  (node?.type === 'UnaryExpression' && node.operator === '!' && literal(node.argument, value ? 0 : 1));
-const staticText = node => node?.type === 'Literal' && typeof node.value === 'string' ? node.value
-  : node?.type === 'TemplateLiteral' && node.expressions.length === 0 ? node.quasis[0].value.cooked : undefined;
-const firstPromptText = node => node?.type === 'BinaryExpression' && node.operator === '+'
+const boolean = (node, value, budget = 32) => budget > 0 && (literal(node, value) ||
+  (node?.type === 'UnaryExpression' && node.operator === '!' &&
+    (node.argument.type === 'Literal' ? !node.argument.value === value : boolean(node.argument, !value, budget - 1))));
+const firstPromptText = node => staticText(node) ?? (node?.type === 'BinaryExpression' && node.operator === '+'
   ? firstPromptText(node.left) || firstPromptText(node.right)
-  : staticText(node) ?? (node?.type === 'TemplateLiteral' ? node.quasis[0].value.cooked : undefined);
+  : node?.type === 'TemplateLiteral' ? node.quasis[0].value.cooked : undefined);
 
 const isUndefined = node => node?.type === 'UnaryExpression' && node.operator === 'void' &&
   literal(node.argument, 0);
 
 export const AST_HELPERS = { literal, propertyName, member, boolean, staticText, firstPromptText };
+
+export function hasPatchAnchors(code, anchors) {
+  const matches = source => anchors.some(group =>
+    (Array.isArray(group) ? group : [group]).every(token => source.includes(token)));
+  if (matches(code)) return true;
+  // Normalize only the prefilter; edits still use original AST ranges.
+  const normalized = code.replace(/\\(?:u\{([\da-f]+)\}|u([\da-f]{4})|x([\da-f]{2}))/gi,
+    (match, point, unit, byte) => {
+      const value = parseInt(point ?? unit ?? byte, 16);
+      return value <= 0x10ffff ? String.fromCodePoint(value) : match;
+    }).replace(/(["'`])\s*\+\s*(["'`])/g, '');
+  return matches(normalized);
+}
 
 export const parsePatchSource = code => parse(code, {
   ecmaVersion: 'latest', sourceType: 'script', allowHashBang: true,
@@ -9097,6 +9143,17 @@ export function createPatchContext(tree, code, loadImport = () => undefined) {
         const right = value.context.text(value.node.right, new Set(seen), budget - 1);
         if (left !== undefined && right !== undefined) return left + right;
       }
+      if (value.node.type === 'TemplateLiteral') {
+        let text = value.node.quasis[0].value.cooked;
+        if (typeof text !== 'string') return;
+        for (let i = 0; i < value.node.expressions.length; i++) {
+          const part = value.context.text(value.node.expressions[i], new Set(seen), budget - 1);
+          const tail = value.node.quasis[i + 1].value.cooked;
+          if (part === undefined || typeof tail !== 'string') return;
+          text += part + tail;
+        }
+        return text;
+      }
     },
     resolve(node, seen = new Set(), budget = 32) {
       if (!node || budget <= 0) return;
@@ -9164,7 +9221,8 @@ function hasGate(node, id) {
 function hasRemoteSettingsContext(node) {
   let found = false;
   walk(node, child => {
-    const strings = child.type === 'Literal' && typeof child.value === 'string' ? [child.value]
+    const text = staticText(child);
+    const strings = text !== undefined ? [text]
       : child.type === 'TemplateLiteral' ? child.quasis.map(quasi => quasi.value.cooked ?? '') : [];
     if (strings.some(value => value.includes('Remote settings:') || value.includes('remote-settings.json'))) found = true;
   });
@@ -9173,7 +9231,7 @@ function hasRemoteSettingsContext(node) {
 
 export function scanAstPatches(code, readTree = () => parsePatchSource(code), readContext) {
   const results = Object.fromEntries(AST_PATCH_IDS.map(id => [id, { matches: [], protected: [], present: false, patched: false }]));
-  if (!anchors.some(anchor => code.includes(anchor))) return results;
+  if (!hasPatchAnchors(code, anchors)) return results;
   const tree = readTree();
   const context = readContext ? readContext() : createPatchContext(tree, code);
   const functionNode = node => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(node?.type);
@@ -9228,17 +9286,12 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
     return values;
   };
 
-  const functions = new Map();
   const wigglyLiterals = new Set(), wigglyHandled = new Set();
   let pairingHandled = false;
   const MISSING_SENTINEL = '[Tool result missing due to internal error]';
-  const resolvesToMissingSentinel = code.includes(MISSING_SENTINEL) ? pairingScopeResolver(tree, MISSING_SENTINEL) : () => false;
-  walk(tree, node => {
-    if (node.type === 'FunctionDeclaration' && node.id?.type === 'Identifier') {
-      functions.set(node.id.name, node);
-    }
-  });
-  walk(tree, node => {
+  const hasMissingSentinel = hasPatchAnchors(code, [MISSING_SENTINEL]);
+  const resolvesToMissingSentinel = hasMissingSentinel ? pairingScopeResolver(tree, MISSING_SENTINEL) : () => false;
+  walk(tree, (node, parent) => {
     if (node.type === 'ClassDeclaration' || node.type === 'ClassExpression') {
       const members = new Map(node.body.body.map(entry => [propertyName(entry), entry]));
       const reader = members.get('getEnvironmentOverrides');
@@ -9275,7 +9328,7 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
         }
       }
     }
-    if (literal(node, 'tengu_wiggly_dove')) wigglyLiterals.add(node.start);
+    if (literal(node, 'tengu_wiggly_dove') && !literal(parent, 'tengu_wiggly_dove')) wigglyLiterals.add(node.start);
     if (functionNode(node) && node.params.length === 0) {
       const flagArguments = [];
       let teamEnv = false;
@@ -9346,14 +9399,14 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
         else results[id].present = true;
         if (names.length === 1 && enabled.length === 1 && enabled[0].kind === 'init' &&
             !patched &&
-            !props.some(p => p.type === 'SpreadElement' || (p.computed && p.key.type !== 'Literal'))) {
+            !props.some(p => p.type === 'SpreadElement' || (p.computed && propertyName(p) === undefined))) {
           if (!overridePredicate(id, enabled[0].value, enabled[0])) results[id].skipped = (results[id].skipped ?? 0) + 1;
         } else if (!patched) results[id].skipped = (results[id].skipped ?? 0) + 1;
       }
       const enabled = named('enabled');
       if (named('pixelValidation').length === 1 && enabled.length === 1 &&
           enabled[0].kind === 'init' &&
-          !props.some(p => p.type === 'SpreadElement' || (p.computed && p.key.type !== 'Literal'))) {
+          !props.some(p => p.type === 'SpreadElement' || (p.computed && propertyName(p) === undefined))) {
         const id = 'computer-use-default', value = enabled[0].value;
         if (alreadyPatched(value, id)) results[id].patched = true;
         else {
@@ -9372,9 +9425,14 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
       const enabledResult = expression => {
         if (expression.type === 'ChainExpression') return enabledResult(expression.expression);
         if (expression.type === 'LogicalExpression' && expression.operator === '&&') return enabledResult(expression.right);
-        if (expression.type === 'BinaryExpression' &&
-            (expression.operator === '===' && boolean(expression.right, true) ||
-             expression.operator === '!==' && boolean(expression.right, false))) return enabledResult(expression.left);
+        if (expression.type === 'BinaryExpression') {
+          const expected = ['===', '=='].includes(expression.operator) ? true :
+            ['!==', '!='].includes(expression.operator) ? false : undefined;
+          if (expected !== undefined) {
+            if (boolean(expression.right, expected)) return enabledResult(expression.left);
+            if (boolean(expression.left, expected)) return enabledResult(expression.right);
+          }
+        }
         return member(expression, 'enabled') ? expression : undefined;
       };
       if (alreadyPatched(node, id)) results[id].patched = true;
@@ -9441,16 +9499,23 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
       if (candidate && !rewritten) results[id].skipped = (results[id].skipped ?? 0) + 1;
     }
 
-    if (node.type === 'FunctionDeclaration' && node.params.length === 0 &&
-        !node.async && !node.generator && node.body.body.length === 1 &&
-        node.body.body[0].type === 'ReturnStatement') {
-      const value = node.body.body[0].argument;
+    if (functionNode(node) && node.params.length === 0 && !node.async && !node.generator) {
+      const statements = node.body.type === 'BlockStatement'
+        ? node.body.body.filter(statement => !statement.directive && statement.type !== 'EmptyStatement') : [];
+      const value = node.body.type !== 'BlockStatement' ? node.body :
+        statements.length === 1 && statements[0].type === 'ReturnStatement' ? statements[0].argument : undefined;
       if (literal(value, 'external')) edit('user-type-ant', value, '"ant"');
-      const standalone = expr => expr?.type === 'BinaryExpression' && expr.operator === '===' &&
-        member(expr.left, 'isStandaloneExecutable') && expr.left.object.name === 'Bun' && boolean(expr.right, true);
-      const typeofBun = expr => expr?.type === 'BinaryExpression' && expr.operator === '<' &&
-        expr.left.type === 'UnaryExpression' && expr.left.operator === 'typeof' &&
-        expr.left.argument.name === 'Bun' && literal(expr.right, 'u');
+      const standaloneMember = expr => member(expr, 'isStandaloneExecutable') && expr.object.name === 'Bun';
+      const standalone = expr => standaloneMember(expr) ||
+        expr?.type === 'BinaryExpression' && ['===', '=='].includes(expr.operator) &&
+          (standaloneMember(expr.left) && boolean(expr.right, true) ||
+           standaloneMember(expr.right) && boolean(expr.left, true));
+      const bunType = expr => expr?.type === 'UnaryExpression' && expr.operator === 'typeof' && expr.argument.name === 'Bun';
+      const typeofBun = expr => expr?.type === 'BinaryExpression' &&
+        (expr.operator === '<' && bunType(expr.left) && literal(expr.right, 'u') ||
+         expr.operator === '>' && bunType(expr.right) && literal(expr.left, 'u') ||
+         ['!==', '!='].includes(expr.operator) &&
+           (bunType(expr.left) && literal(expr.right, 'undefined') || bunType(expr.right) && literal(expr.left, 'undefined')));
       if (standalone(value) || (value?.type === 'LogicalExpression' && value.operator === '&&' &&
           typeofBun(value.left) && standalone(value.right))) edit('bun-standalone-executable', value, '!0');
       if (value?.type === 'UnaryExpression' && value.operator === '!' &&
@@ -9461,7 +9526,7 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
       }
     }
 
-    if (node.type === 'FunctionDeclaration' && node.params.length === 0 &&
+    if (functionNode(node) && node.params.length === 0 && node.body.type === 'BlockStatement' &&
         !node.async && !node.generator) {
       const statements = node.body.body;
       const cached = statements.find(statement => statement.type === 'VariableDeclaration' &&
@@ -9480,8 +9545,8 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
         declaration.init.callee.type === 'Identifier' &&
         declaration.id.properties.some(property => property.type === 'Property' &&
           propertyName(property) === 'eligible'));
-      const helper = eligibility && functions.get(eligibility.init.callee.name);
-      if (helper && hasRemoteSettingsContext(helper)) {
+      const helper = eligibility && context.resolve(eligibility.init.callee)?.node;
+      if (functionNode(helper) && hasRemoteSettingsContext(helper)) {
         const id = 'remote-settings-off';
         if (!cachedReturn) results[id].present = true;
         else {
@@ -9519,7 +9584,7 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
               if (returnObj?.type !== 'ObjectExpression') return;
               const props = returnObj.properties.filter(p => p.type === 'Property');
               if (props.length !== 4 || returnObj.properties.length !== 4 ||
-                  props.some(p => p.kind !== 'init' || p.method || (p.computed && p.key.type !== 'Literal')) ||
+                  props.some(p => p.kind !== 'init' || p.method || (p.computed && propertyName(p) === undefined)) ||
                   new Set(props.map(propertyName)).size !== 4) return;
               const hasType = props.some(p => propertyName(p) === 'type' && literal(p.value, 'tool_result'));
               const hasToolUseId = props.some(p => propertyName(p) === 'tool_use_id' && p.value?.type === 'Identifier' && p.value.name === idParam.name);
@@ -9593,7 +9658,7 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
     results['wiggly-dove'].present = true;
     results['wiggly-dove'].matches = [];
   }
-  if (code.includes('[Tool result missing due to internal error]') && !pairingHandled) {
+  if (hasMissingSentinel && !pairingHandled) {
     results['tool-result-pairing-recovery'].present = true;
     results['tool-result-pairing-recovery'].matches = [];
   }
@@ -9629,6 +9694,7 @@ import {
   scanWarningSuppression, scanRuntimeGates,
 } from './pentest-scanners.mjs';
 import { scanRuntimeTrimming } from './pentest-trimming.mjs';
+import { hasPatchAnchors } from './ast-patches.mjs';
 import {
   removedPromptPrefixes, denialGuidancePrefixes, injectionWarning,
   removalGuidance, unavailableReviewWarning, reportWarningReference,
@@ -9640,60 +9706,74 @@ export { pruneRuntimeGraph } from './pentest-pruner.mjs';
 export const PENTEST_REQUIRED = new Set([
   'pentest-prompt-assembly',
 ]);
+// An anchor matches only when all its tokens are present.
 export const PENTEST_ANCHORS = [
-  'classifierOnly', ' denied before call: ',
-  'clawgod:permission-',
-  'tengu_mcp_server_policy_bypass_exempt',
-  'tengu_settings_bypass_unconsented_noninteractive_ignored', 'skipDangerousModePermissionPrompt',
-  'Bypass permissions mode was disabled by settings', 'refuseBypassUnderRoot',
-  'getuid', 'geteuid', 'IS_SANDBOX',
-  'managed-settings.json', 'disallowedTools',
-  'mcpPermissionModeOverrides',
-  'check for typos', 'unknownModelWindowWarning', 'isn\'t recognized',
-  '"acceptEdits"',
-  'Handoff classifier request refused by the safety safeguard', 'isBypassPermissionsModeAvailable',
-  'trustAccepted', 'hasTrustDialogAccepted',
-  'https://api.anthropic.com/api/web/domain_info?domain=', 'isolationLatch', 'activeLatch',
-  'dangerousRemoval', 'denied by a built-in Claude Code safety check',
-  'You are a web-reading specialist for Claude Code',
-  'bundledSkillsInitialized', 'builtinPluginsInitialized', 'getAllBaseTools', 'assembleToolPool', 'CLAUDE_CODE_DISABLE_CRON',
-  'clawgod:runtime-table-probe', 'inputSchema', '"help"', "'help'",
-  'disableRemoteControl', 'remote_control_at_startup', 'voice_init_gate',
-  'allow_voice_mode', 'clawgod:security-', 'remote-control', 'Toggle voice mode', 'Toggle brief-only mode',
-  'tengu_kairos_brief', 'pewter_owl_brief', 'pewter_owl_tool', 'briefStandalone',
-  'useCoworkPlugins', 'cowork_plugins', 'cowork_settings.json', 'isCoworkCloud', 'coworkFrameArtifacts',
-  'DISABLE_AUTOUPDATER', 'DISABLE_UPDATES', 'checkForUpdates',
-  '/api/claude_code/version', 'update-check',
-  'DISABLE_TELEMETRY', 'DISABLE_ERROR_REPORTING',
-  'telemetry.anthropic.com', 'analytics.anthropic.com', '/api/telemetry',
-  'trackEvent', 'sendAnalytics', '1p_event_logging_start',
-  'fileCheckpointingEnabled', 'CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING',
-  'createCheckpoint', 'restoreCheckpoint',
-  '# Tone and style',
-  '"shared"', "'shared'", 'rewritePromptAssembly', 'customSystemPrompt', 'defaultSystemPrompt',
-  'Tools are executed in a user-selected permission mode',
-  'Be careful not to introduce security vulnerabilities',
-  'For exploratory questions (',
-  'You are highly capable and often allow users to complete ambitious tasks',
-  'Prefer editing existing files to creating new ones.',
-  'Avoid backwards-compatibility hacks like renaming unused _vars',
-  'Your response above was stopped by a safety classifier',
-  'Not run: the response that made this tool call was stopped by a safety classifier',
-  'Interrupted: the response that made this tool call was stopped by a safety classifier',
-  'switch to plan mode to design an approach before coding',
-  'present plan for approval and start coding (plan mode only)',
-  "read and write the session's attached claude.ai project",
-  '# Explanatory Style Active', '"output-style":',
-  '"release-notes"', '"statusline"', '"privacy-settings"',
-  ...removedPromptPrefixes, ...denialGuidancePrefixes, injectionWarning,
-  removalGuidance, unavailableReviewWarning, reportWarningReference,
+  ['classifierOnly'],
+  ['denied before call'],
+  ['clawgod:permission-'],
+  ['tengu_mcp_server_policy_bypass_exempt'],
+  ['tengu_settings_bypass_unconsented_noninteractive_ignored'],
+  ['skipDangerousModePermissionPrompt'],
+  ['Bypass permissions mode', 'disabled by settings'],
+  ['refuseBypassUnderRoot'],
+  ['getuid'], ['geteuid'], ['IS_SANDBOX'],
+  ['managed-settings.json'], ['disallowedTools'],
+  ['mcpPermissionModeOverrides'],
+  ['unknownModelWindowWarning'],
+  ['isn\'t recognized'],
+  ['"acceptEdits"'],
+  ['Handoff classifier request refused', 'safety safeguard'],
+  ['isBypassPermissionsModeAvailable'],
+  ['trustAccepted'], ['hasTrustDialogAccepted'],
+  ['api.anthropic.com', 'web/domain_info'],
+  ['isolationLatch'], ['activeLatch'],
+  ['dangerousRemoval'],
+  ['denied by a built-in', 'safety check'],
+  ['web-reading specialist', 'Claude Code'],
+  ['bundledSkillsInitialized'], ['builtinPluginsInitialized'],
+  ['getAllBaseTools'], ['assembleToolPool'],
+  ['CLAUDE_CODE_DISABLE_CRON'],
+  ['clawgod:runtime-table-probe'],
+  ['inputSchema'],
+  ['disableRemoteControl'], ['remote_control_at_startup'], ['voice_init_gate'],
+  ['allow_voice_mode'], ['clawgod:security-'],
+  ['remote-control'],
+  ['Toggle voice mode'], ['Toggle brief-only mode'],
+  ['tengu_kairos_brief'], ['pewter_owl_brief'], ['pewter_owl_tool'], ['briefStandalone'],
+  ['useCoworkPlugins'], ['cowork_plugins'], ['cowork_settings.json'],
+  ['isCoworkCloud'], ['coworkFrameArtifacts'],
+  ['DISABLE_AUTOUPDATER'], ['DISABLE_UPDATES'], ['checkForUpdates'],
+  ['/api/claude_code/version'], ['update-check'],
+  ['DISABLE_TELEMETRY'], ['DISABLE_ERROR_REPORTING'],
+  ['telemetry.anthropic.com'], ['analytics.anthropic.com'], ['/api/telemetry'],
+  ['trackEvent'], ['sendAnalytics'], ['1p_event_logging_start'],
+  ['fileCheckpointingEnabled'], ['CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING'],
+  ['createCheckpoint'], ['restoreCheckpoint'],
+  ['# Tone and style'],
+  ['rewritePromptAssembly'], ['customSystemPrompt'], ['defaultSystemPrompt'],
+  ['Tools are executed in a user-selected permission mode'],
+  ['Be careful not to introduce', 'security vulnerabilities'],
+  ['For exploratory questions'],
+  ['highly capable', 'allow users to complete ambitious tasks'],
+  ['Prefer editing existing files', 'creating new ones'],
+  ['backwards-compatibility hacks', 'renaming unused'],
+  ['response above was stopped', 'safety classifier'],
+  ['Not run:', 'stopped by a safety classifier'],
+  ['Interrupted:', 'stopped by a safety classifier'],
+  ['switch to plan mode', 'design an approach'],
+  ['plan mode', 'present plan for approval'],
+  ['session\'s attached', 'claude.ai project'],
+  ['# Explanatory Style Active'], ['"output-style":'],
+  ['"release-notes"'], ['"statusline"'], ['"privacy-settings"'],
+  ...[...removedPromptPrefixes, ...denialGuidancePrefixes, injectionWarning,
+    removalGuidance, unavailableReviewWarning, reportWarningReference]
+    .map(text => [text]),
 ];
 
 export function scanPentestPatches(code, upstreamRanges = [], readTree = () => parsePatchSource(code)) {
   const results = Object.fromEntries(PENTEST_AST_PATCH_IDS.map(id => [id, { matches: [], fallbackMatches: [], present: false, patched: false }]));
-  const anchored = PENTEST_ANCHORS.some(anchor => code.includes(anchor));
-  const flagChunk = /["']tengu_/.test(code);
-  if (!anchored && !flagChunk) return results;
+  const anchored = hasPatchAnchors(code, PENTEST_ANCHORS);
+  if (!anchored && !hasPatchAnchors(code, ['tengu_'])) return results;
   const tree = readTree();
   const edits = new Set();
   const edit = (id, node, replacement) => {
@@ -10202,43 +10282,47 @@ function scanCombinerWrap(tree, code, results, edit) {
     node.arguments[1].object.type === 'Identifier' && node.arguments[1].object.name === 'globalThis';
   walk(tree, node => {
     if (assemblyCall(node)) results[id].patched = true;
-    if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(node.type) &&
-        node.body.type === 'BlockStatement') {
-      const inputs = new Set(node.params.filter(param => param.type === 'ObjectPattern')
-        .flatMap(param => param.properties.filter(property => property.type === 'Property').map(propertyName)));
-      if (inputs.has('customSystemPrompt') && inputs.has('appendSystemPrompt') &&
-          (inputs.has('defaultSystemPrompt') || inputs.has('tools'))) {
-        walk(node.body, child => {
-          if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(child.type)) return false;
-          if (child.type !== 'ReturnStatement' || child.argument?.type !== 'ObjectExpression') return;
-          const properties = child.argument.properties.filter(property => property.type === 'Property' &&
-            property.kind === 'init' && !property.method);
-          const named = key => properties.filter(property => propertyName(property) === key);
-          const key = named('servesDefault').length === 1 ? 'prompt' :
-            named('userContext').length === 1 && named('systemContext').length === 1 ? 'systemPrompt' : undefined;
-          const targets = key && named(key);
-          if (!targets || targets.length !== 1 || contains(targets[0].value, assemblyCall)) return;
-          if (child.argument.properties.some(property => property.type === 'SpreadElement')) return;
-          const property = targets[0], target = property.shorthand ? property : property.value;
-          const original = code.slice(property.value.start, property.value.end);
-          results[id].fallbackMatches.push({ start: target.start, end: target.end,
-            replacement: `${property.shorthand ? key + ':' : ''}/*clawgod:pentest-prompt-assembly*/globalThis.__clawgodHelpers.rewritePromptAssembly(${original},globalThis.__clawgodAssembly)`,
-            strategy: 'legacy-assembly' });
-        });
+    if (!['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(node.type)) return;
+    const params = node.params.map(param => param.type === 'AssignmentPattern' ? param.left : param);
+    const inputs = new Set(params.filter(param => param.type === 'ObjectPattern')
+      .flatMap(param => param.properties.filter(property => property.type === 'Property').map(propertyName)));
+    if (inputs.has('customSystemPrompt') && inputs.has('appendSystemPrompt') &&
+        (inputs.has('defaultSystemPrompt') || inputs.has('tools'))) {
+      const objects = [];
+      if (node.body.type === 'ObjectExpression') objects.push(node.body);
+      else walk(node.body, child => {
+        if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(child.type)) return false;
+        if (child.type === 'ReturnStatement' && child.argument?.type === 'ObjectExpression') objects.push(child.argument);
+      });
+      for (const object of objects) {
+        const properties = object.properties.filter(property => property.type === 'Property' &&
+          property.kind === 'init' && !property.method);
+        const named = key => properties.filter(property => propertyName(property) === key);
+        const key = named('servesDefault').length === 1 ? 'prompt' :
+          named('userContext').length === 1 && named('systemContext').length === 1 ? 'systemPrompt' : undefined;
+        const targets = key && named(key);
+        if (!targets || targets.length !== 1 || contains(targets[0].value, assemblyCall)) continue;
+        if (object.properties.some(property => property.type === 'SpreadElement' ||
+            property.computed && propertyName(property) === undefined)) continue;
+        const property = targets[0], target = property.shorthand ? property : property.value;
+        const original = code.slice(property.value.start, property.value.end);
+        results[id].fallbackMatches.push({ start: target.start, end: target.end,
+          replacement: `${property.shorthand ? key + ':' : ''}/*clawgod:pentest-prompt-assembly*/globalThis.__clawgodHelpers.rewritePromptAssembly(${original},globalThis.__clawgodAssembly)`,
+          strategy: 'legacy-assembly' });
       }
     }
-    if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(node.type) &&
-        node.body.type === 'BlockStatement' && node.params.length === 3 &&
+    if (node.body.type === 'BlockStatement' && params.length >= 3 &&
         !node.async && !node.generator &&
-        node.params.every(p => p.type === 'Identifier')) {
-      const [pE, pN, pR] = node.params.map(p => p.name);
+        params.every(p => p.type === 'Identifier')) {
+      const [pE, pN, pR] = params.map(p => p.name);
       const statements = node.body.body;
       const retStatements = [];
       walk(node.body, child => {
         if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(child.type)) return false;
         if (child.type === 'ReturnStatement' && child.argument) retStatements.push(child);
       });
-      if (retStatements.some(ret => contains(ret.argument, assemblyCall))) return;
+      const pendingReturns = retStatements.filter(ret => !contains(ret.argument, assemblyCall));
+      if (!pendingReturns.length) return;
       const spreadSliceMerge = arg =>
         arg?.type === 'ArrayExpression' &&
         arg.elements.some(el => el.type === 'SpreadElement' &&
@@ -10259,9 +10343,9 @@ function scanCombinerWrap(tree, code, results, edit) {
               c.callee.type === 'Identifier' && c.arguments.some(a => a.type === 'Identifier' && a.name === pN)))) &&
         !contains(node.body, c => c.type === 'CallExpression' &&
           c.callee.type === 'Identifier' && c.callee.name === 'rewritePromptAssembly');
-      if (isCombiner && retStatements.length > 0) {
+      if (isCombiner) {
         results[id].present = true;
-        for (const ret of retStatements) {
+        for (const ret of pendingReturns) {
           const original = code.slice(ret.argument.start, ret.argument.end);
           edit(id, ret.argument,
             '/*clawgod:pentest-prompt-assembly*/globalThis.__clawgodHelpers.rewritePromptAssembly(' +
@@ -10366,7 +10450,7 @@ function scanPromptTextErase(tree, code, results, edit, permissionBodies, trimEx
         else {
           results[id].present = true;
           if (bold.length === 1 && bold[0].kind === 'init' && boolean(bold[0].value, true) &&
-              !props.some(p => p.type === 'SpreadElement' || (p.computed && p.key.type !== 'Literal'))) {
+              !props.some(p => p.type === 'SpreadElement' || (p.computed && propertyName(p) === undefined))) {
             edit(id, title, JSON.stringify(`Claude Code_Y${titleMatch[2]}`));
           }
         }
@@ -12113,7 +12197,7 @@ $patcherCode = @'
 import { readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, renameSync, unlinkSync } from 'fs';
 import { join, dirname, relative, resolve as resolvePath, sep } from 'path';
 import { fileURLToPath } from 'url';
-import { AST_PATCH_IDS, scanAstPatches, applyAstEdits, parsePatchSource, createPatchContext } from './ast-patches.mjs';
+import { AST_PATCH_IDS, scanAstPatches, applyAstEdits, parsePatchSource, createPatchContext, hasPatchAnchors } from './ast-patches.mjs';
 import { PENTEST_AST_PATCH_IDS, PENTEST_AST_META, PENTEST_REQUIRED, scanPentestPatches, pruneRuntimeGraph } from './pentest-patches.mjs';
 import { FEATURES, featuresMeta } from './patch-registry.mjs';
 
@@ -12268,7 +12352,7 @@ const upstreamPatches = [
     optional: true,
     fallbacks: [{
       pattern: /function\s+([\w$]+)\s*\(\s*([\w$]+)\s*\)\s*\{\s*(?:let|const|var)\s+([\w$]+)\s*=\s*Math\.max\(\s*0\s*,\s*Math\.ceil\(\s*\(\s*\2\s*-\s*(?:50000|50_000|5[eE]4)\s*\)\s*\/\s*(?:50000|50_000|5[eE]4)\s*\)\s*\)\s*;\s*return\s+Math\.min\(\s*([\w$]+)\s*,\s*([\w$]+)\s*\+\s*\3\s*\*\s*(?:1[eE]4|10000|10_000)\s*\)\s*;?\s*\}/g,
-      nodeType: 'FunctionDeclaration',
+      nodeType: ['FunctionDeclaration', 'FunctionExpression'],
     }],
   },
   {
@@ -12292,7 +12376,7 @@ const upstreamPatches = [
     optional: true,
     fallbacks: [{
       pattern: /function\s+([\w$]+)\s*\(\s*\)\s*\{\s*(?:let|const|var)\s+([\w$]+)\s*=\s*[^;{}]{1,300}?\?\.maxRetries\s*;\s*return\s+typeof\s+\2\s*===?\s*["']number["']\s*&&\s*Number\.isInteger\(\s*\2\s*\)\s*&&\s*\2\s*>=\s*0\s*\?\s*\{\s*value\s*:\s*\2\s*,\s*src\s*:\s*["']gb["']\s*\}\s*:\s*\{\s*value\s*:\s*[\w$]+\s*,\s*src\s*:\s*["']default["']\s*\}\s*;?\s*\}/g,
-      nodeType: 'FunctionDeclaration',
+      nodeType: ['FunctionDeclaration', 'FunctionExpression'],
     }],
   },
   {
@@ -12309,7 +12393,7 @@ const upstreamPatches = [
     name: 'Auto-mode unlock for third-party API (inline gate)',
     pattern: /if\((?:([\w$]+)!=="firstParty"&&(?:\1!=="anthropicAws"|![\w$]+\(\1\))[^;]*|[\w$]+\(\)&&\([\w$]+==="claude-opus-4-6"\|\|[\w$]+==="claude-sonnet-4-6"\|\|[\w$]+\.includes\("haiku"\)[^;]*?\))\)return!1;/g,
     replacer: (m) => `if(globalThis.__clawgodPatches?.[${JSON.stringify('auto-mode-inline-gate')}]===!1&&` + m.slice(3, -10) + `)return!1;`,
-    sentinel: '!=="firstParty"&&',
+    sentinel: ['!=="firstParty"', '&&'],
   },
 
   {
@@ -12318,7 +12402,7 @@ const upstreamPatches = [
     pattern: /if\(([\w$]+)\.length===0&&([\w$]+)\.length>0\)([\w$]+)\("input_image_drag","read_failed"\),([\w$]+)\.push\(\.\.\.\2\)/g,
     replacer: (m, L, R, at, D) =>
       `if(${L}.length===0&&${R}.length>0){${at}("input_image_drag","read_failed");if(d&&${D}.length===0){m();return}${D}.push(...${R})}`,
-    sentinel: '"input_image_drag","read_failed"',
+    sentinel: ['input_image_drag', 'read_failed'],
     optional: true,
   },
 
@@ -12328,11 +12412,11 @@ const upstreamPatches = [
     pattern: /function ([\w$]+)\(\)\{if\(!([\w$]+)\("true"\)\)return!1;if\([\w$]+\(\)\)return!1;return process\.env\.CLAUDE_CODE_ENTRYPOINT!=="local-agent"\}/g,
     replacer: (m, fn, envCheck) =>
       `function ${fn}(){if(!${envCheck}(process.env.EMBEDDED_SEARCH_TOOLS))return!1;if(typeof globalThis.__dpBinOk>"u"){try{var _w=process.platform==="win32"?"where":"which";require("child_process").execFileSync(_w,["bfs"],{timeout:2e3});require("child_process").execFileSync(_w,["ugrep"],{timeout:2e3});globalThis.__dpBinOk=!0}catch{globalThis.__dpBinOk=!1}}if(!globalThis.__dpBinOk)return!1;return process.env.CLAUDE_CODE_ENTRYPOINT!=="local-agent"}`,
-    sentinel: 'ct("true")',
+    sentinel: ['EMBEDDED_SEARCH_TOOLS', 'local-agent', 'CLAUDE_CODE_ENTRYPOINT'],
     optional: true,
     fallbacks: [{
       pattern: /function\s+([\w$]+)\s*\(\s*\)\s*\{\s*if\s*\(\s*!([\w$]+)\(\s*["']true["']\s*\)\s*\)\s*return\s*(?:!1|false)\s*;\s*if\s*\(\s*[\w$]+\(\s*\)\s*\)\s*return\s*(?:!1|false)\s*;\s*return\s+process\.env\.CLAUDE_CODE_ENTRYPOINT\s*!==\s*["']local-agent["']\s*;?\s*\}/g,
-      nodeType: 'FunctionDeclaration',
+      nodeType: ['FunctionDeclaration', 'FunctionExpression'],
     }],
   },
 
@@ -12358,7 +12442,7 @@ const upstreamPatches = [
       const fn = m.match(/^function ([\w$]+)/)[1];
       return `function ${fn}(){if(${gate('geo-detect-probe')})return null;` + m.slice(`function ${fn}(){`.length, -1) + `}`;
     },
-    sentinel: 'Asia/Shanghai',
+    sentinel: ['Asia/Shanghai', 'Asia/Urumqi'],
   },
   {
     id: 'geo-apostrophe-stego',
@@ -12385,7 +12469,7 @@ const upstreamPatches = [
     name: 'Remove CYBER_RISK_INSTRUCTION (unconditional)',
     pattern: /([\w$]+)="(IMPORTANT: Assist with authorized security testing[^"]*)"/g,
     replacer: (m, varName) => `${varName}=""`,
-    sentinel: 'Assist with authorized security testing',
+    sentinel: ['Assist with authorized security testing', 'IMPORTANT'],
   },
   {
     id: 'remove-url-restriction',
@@ -12393,7 +12477,7 @@ const upstreamPatches = [
     name: 'Remove URL generation restriction',
     pattern: /(\n\$\{[\w$]+\})(\nIMPORTANT: You must NEVER generate or guess URLs[^.]*\. You may use URLs provided by the user in their messages or local files\.)/g,
     replacer: (m, prefix, sentence) => `\${${gate('remove-url-restriction')}?"":\`${prefix}\`+'${sentence.replace('\n', '\\n')}'}`,
-    sentinel: 'IMPORTANT: You must NEVER generate or guess URLs',
+    sentinel: ['NEVER generate or guess URLs', 'URLs provided by the user'],
   },
   {
     id: 'remove-cautious-actions',
@@ -12401,7 +12485,7 @@ const upstreamPatches = [
     name: 'Remove cautious actions section',
     pattern: /function ([\w$]+)\(([\w$]*)\)\{(?:if\([\s\S]{1,200}?\)return`# Executing actions with care\n\n[\s\S]*?`;)?return`# Executing actions with care\n\n[\s\S]*?`\}/g,
     replacer: (m, fn, arg) => `function ${fn}(${arg}){if(${gate('remove-cautious-actions')})return\`\`;` + m.slice(`function ${fn}(${arg}){`.length, -1) + `}`,
-    sentinel: '# Executing actions with care',
+    sentinel: ['# Executing actions with care'],
   },
   {
     id: 'remove-not-logged-in',
@@ -12459,7 +12543,7 @@ const upstreamPatches = [
       pattern: /[\w$]+(?:\.join)?\(\s*[\w$]+\(\s*\)\s*,\s*[\w$]+\s*\?\s*["']claude\.exe["']\s*:\s*["']claude["']\s*\)/g,
       nodeType: 'CallExpression',
     }],
-    sentinel: '?"claude.exe":"claude")',
+    sentinel: ['claude.exe', '"claude"'],
     optional: true,
   },
   {
@@ -12641,7 +12725,9 @@ function collectMatches(p) {
           }
         }
       }
-      return nodes.get(match.index)?.some(node => node.type === type && node.end === match.index + match[0].length);
+      const types = Array.isArray(type) ? type : [type];
+      return nodes.get(match.index)?.some(node =>
+        types.includes(node.type) && node.end === match.index + match[0].length);
     };
     for (const [index, rule] of rules.entries()) {
       let matches;
@@ -12797,19 +12883,19 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
       skipped++;
       continue;
     }
-    const optionalAnchorPresent = p.ast ? astPresent.has(p.id) :
+    const sentinels = p.ast ? [p.id] :
       (Array.isArray(p.sentinel) ? p.sentinel : [p.sentinel])
-        .some(sentinel => typeof sentinel === 'string' && Object.values(files).some(content => content.includes(sentinel)));
-    if (p.optional && !optionalAnchorPresent) {
+        .filter(s => typeof s === 'string' && s.length > 0);
+    const anchorPresent = p.ast ? astPresent.has(p.id) :
+      sentinels.length > 0 && Object.values(files).some(content => hasPatchAnchors(content, [sentinels]));
+    if (p.optional && !anchorPresent) {
       console.log(`  \u23ed  ${p.name} (not present in this version)`);
       skipped++;
       continue;
     }
-    if (p.sentinel !== undefined || (p.ast && astPresent.has(p.id))) {
-      const sentinels = p.ast ? [p.id] : (Array.isArray(p.sentinel) ? p.sentinel : [p.sentinel]);
-      const stillPresent = p.ast ? sentinels : sentinels.filter((s) => Object.values(files).some((c) => c.includes(s)));
-      if (stillPresent.length > 0) {
-        const detail = stillPresent.map((s) => JSON.stringify(s)).join(', ');
+    if (p.sentinel !== undefined || (p.ast && anchorPresent)) {
+      if (anchorPresent) {
+        const detail = sentinels.map((s) => JSON.stringify(s)).join(', ');
         console.log(`  \u26a0\ufe0f  ${p.name} \u2014 ${p.ast ? 'AST matcher' : 'regex'} stale, sentinel still in source: ${detail} (skipped, upstream behavior kept)`);
         skipped++;
         unverified++;

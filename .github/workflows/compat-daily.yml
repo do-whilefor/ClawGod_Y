@@ -94,10 +94,12 @@ jobs:
           done
 
   smoke:
-    name: ${{ matrix.name }}
+    name: ${{ matrix.name }} (Claude ${{ matrix.claude }})
     strategy:
       fail-fast: false
       matrix:
+        claude: ['2.1.314', stable, latest]
+        os: [ubuntu-latest, macos-26]
         include:
           - name: Linux smoke (x64)
             os: ubuntu-latest
@@ -113,6 +115,7 @@ jobs:
       SMOKE_PLATFORM: ${{ matrix.platform }}
       SMOKE_RUNNER: ${{ matrix.os }}
       EXPECTED_ARCH: ${{ matrix.arch }}
+      CLAUDE_CHANNEL: ${{ matrix.claude }}
     steps:
       - uses: actions/checkout@v5
 
@@ -131,7 +134,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.npm
-          key: npm-claude-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+          key: npm-claude-${{ runner.os }}-${{ runner.arch }}-${{ matrix.claude }}-${{ github.run_id }}
           restore-keys: |
             npm-claude-${{ runner.os }}-${{ runner.arch }}-
 
@@ -172,8 +175,12 @@ jobs:
       - name: Run install.sh (npm-fallback path)
         shell: bash
         run: |
-          set -o pipefail
-          bash install.sh 2>&1 | tee /tmp/install.log
+          set -euo pipefail
+          version=$(npm view "@anthropic-ai/claude-code@$CLAUDE_CHANNEL" version)
+          echo "Testing Claude $CLAUDE_CHANNEL -> $version"
+          echo "CLAUDE_VERSION=$version" >> "$GITHUB_ENV"
+          sed "s/^VERSION=\"[^\"]*\"/VERSION=\"$version\"/" install.sh > "$RUNNER_TEMP/install.sh"
+          bash "$RUNNER_TEMP/install.sh" 2>&1 | tee /tmp/install.log
 
       - name: Verify install artifacts
         shell: bash
@@ -182,7 +189,9 @@ jobs:
           for f in cli.cjs cli.original.cjs startup-check.cjs startup-check.log patch.mjs extract-natives.mjs post-process.mjs feature-gates.cjs runtime-helpers.cjs bun-ant-shim.cjs .source-version; do
             test -e "$HOME/.clawgod/$f" || { echo "::error::missing ~/.clawgod/$f"; exit 1; }
           done
-          echo "Source: $(cat "$HOME/.clawgod/.source-version")"
+          version=$(cat "$HOME/.clawgod/.source-version")
+          echo "Source: $version"
+          [[ "$version" == "$CLAUDE_VERSION" ]] || { echo "::error::expected Claude $CLAUDE_VERSION, installed $version"; exit 1; }
 
       - name: Assert renderer runtime was reported
         shell: bash
@@ -348,7 +357,7 @@ jobs:
           echo "── All functional checks passed ──"
 
       - name: Publish supported-Claude-version badge
-        if: success() && matrix.platform == 'linux' && github.event_name != 'pull_request'
+        if: success() && matrix.platform == 'linux' && matrix.claude == '2.1.314' && github.event_name != 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -383,11 +392,11 @@ jobs:
             const stamp = path.join(process.env.HOME, '.clawgod', '.source-version');
             const claudeVersion = fs.existsSync(stamp)
               ? fs.readFileSync(stamp, 'utf8').trim()
-              : 'unknown';
+              : process.env.CLAUDE_VERSION || 'unknown';
             const prefix = process.env.SMOKE_PLATFORM === 'linux'
               ? 'compat-daily'
               : `compat-daily/${process.env.SMOKE_PLATFORM}`;
-            const title = `${prefix}: broke (claude ${claudeVersion})`;
+            const title = `${prefix}/${process.env.CLAUDE_CHANNEL}: broke (claude ${claudeVersion})`;
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const { data: open } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -413,6 +422,7 @@ jobs:
                 body: [
                   `Daily compatibility run failed on \`${process.env.SMOKE_RUNNER}\`.`,
                   ``,
+                  `- Requested version: \`${process.env.CLAUDE_CHANNEL}\``,
                   `- Claude binary: \`${claudeVersion}\``,
                   `- Run: ${runUrl}`,
                   ``,
@@ -428,11 +438,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - claude: 2.1.314
-            bun: canary
+        claude: ['2.1.314', stable, latest]
+        bun: [canary]
     env:
       NPM_CONFIG_CACHE: ${{ github.workspace }}\.npm-cache
+      CLAUDE_CHANNEL: ${{ matrix.claude }}
     steps:
       - uses: actions/checkout@v5
 
@@ -478,7 +488,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}\.npm-cache
-          key: npm-claude-${{ runner.os }}-${{ github.run_id }}
+          key: npm-claude-${{ runner.os }}-${{ matrix.claude }}-${{ github.run_id }}
           restore-keys: |
             npm-claude-${{ runner.os }}-
 
@@ -533,12 +543,17 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          $version = (& npm view "@anthropic-ai/claude-code@$env:CLAUDE_CHANNEL" version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to resolve Claude version' }
+          Write-Host "Testing Claude $env:CLAUDE_CHANNEL -> $version"
+          "CLAUDE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $log = Join-Path $env:RUNNER_TEMP 'install-windows.log'
           $installerPath = "$env:GITHUB_WORKSPACE\install.ps1"
           $installer = [System.IO.File]::ReadAllText(
             $installerPath,
             [System.Text.Encoding]::ASCII
           )
+          $installer = $installer -replace '(?m)^\$Version = "[^"]*"', ('$Version = "' + $version + '"')
           Invoke-Expression $installer *>&1 |
             Tee-Object -FilePath $log
 
@@ -566,7 +581,9 @@ jobs:
               Write-Error "Missing install artifact: $path"
             }
           }
-          Write-Host "Source: $((Get-Content (Join-Path $clawDir '.source-version') -Raw).Trim())"
+          $version = (Get-Content (Join-Path $clawDir '.source-version') -Raw).Trim()
+          Write-Host "Source: $version"
+          if ($version -ne $env:CLAUDE_VERSION) { throw "Expected Claude $env:CLAUDE_VERSION, installed $version" }
 
       - name: Assert renderer runtime was reported
         shell: powershell
@@ -719,7 +736,7 @@ jobs:
             ${{ runner.temp }}/tui-artifacts/*.json
 
       - name: Open or update issue on scheduled failure
-        if: failure() && github.event_name == 'schedule' && matrix.claude == '2.1.314'
+        if: failure() && github.event_name == 'schedule'
         uses: actions/github-script@v8
         with:
           script: |
@@ -728,8 +745,8 @@ jobs:
             const stamp = path.join(process.env.USERPROFILE, '.clawgod', '.source-version');
             const claudeVersion = fs.existsSync(stamp)
               ? fs.readFileSync(stamp, 'utf8').trim()
-              : 'unknown';
-            const title = `compat-daily/windows: broke (claude ${claudeVersion})`;
+              : process.env.CLAUDE_VERSION || 'unknown';
+            const title = `compat-daily/windows/${process.env.CLAUDE_CHANNEL}: broke (claude ${claudeVersion})`;
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const { data: open } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -755,6 +772,7 @@ jobs:
                 body: [
                   `Daily compatibility run failed on \`windows-latest\`.`,
                   ``,
+                  `- Requested version: \`${process.env.CLAUDE_CHANNEL}\``,
                   `- Claude binary: \`${claudeVersion}\``,
                   `- Run: ${runUrl}`,
                   ``,

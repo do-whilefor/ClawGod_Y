@@ -15,25 +15,56 @@ const anchors = ['external', 'isStandaloneExecutable', 'environmentOverridesPars
   'isEnabled', 'enabled', 'ultrareview', 'amber_flint', 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS',
   '[Tool result missing due to internal error]'];
 const gate = id => `globalThis.__clawgodPatches?.[${JSON.stringify(id)}]!==!1`;
-const literal = (node, value) => node?.type === 'Literal' && node.value === value;
+function staticText(node, budget = 32) {
+  if (!node || budget <= 0) return;
+  if (node.type === 'Literal') return typeof node.value === 'string' ? node.value : undefined;
+  if (node.type === 'BinaryExpression' && node.operator === '+') {
+    const left = staticText(node.left, budget - 1), right = staticText(node.right, budget - 1);
+    if (left !== undefined && right !== undefined) return left + right;
+  }
+  if (node.type === 'TemplateLiteral') {
+    let text = node.quasis[0].value.cooked;
+    if (typeof text !== 'string') return;
+    for (let i = 0; i < node.expressions.length; i++) {
+      const value = staticText(node.expressions[i], budget - 1), tail = node.quasis[i + 1].value.cooked;
+      if (value === undefined || typeof tail !== 'string') return;
+      text += value + tail;
+    }
+    return text;
+  }
+}
+const literal = (node, value) => typeof value === 'string' ? staticText(node) === value
+  : node?.type === 'Literal' && node.value === value;
 const propertyName = node => node.computed
-  ? (node.key?.type === 'Literal' ? node.key.value : undefined)
+  ? (staticText(node.key) ?? (node.key?.type === 'Literal' ? node.key.value : undefined))
   : (node.key?.name ?? node.key?.value);
 const member = (node, name) => node?.type === 'MemberExpression' &&
   (node.computed ? literal(node.property, name) : node.property.name === name);
 const thisMember = (node, name) => member(node, name) && node.object.type === 'ThisExpression';
-const boolean = (node, value) => literal(node, value) ||
-  (node?.type === 'UnaryExpression' && node.operator === '!' && literal(node.argument, value ? 0 : 1));
-const staticText = node => node?.type === 'Literal' && typeof node.value === 'string' ? node.value
-  : node?.type === 'TemplateLiteral' && node.expressions.length === 0 ? node.quasis[0].value.cooked : undefined;
-const firstPromptText = node => node?.type === 'BinaryExpression' && node.operator === '+'
+const boolean = (node, value, budget = 32) => budget > 0 && (literal(node, value) ||
+  (node?.type === 'UnaryExpression' && node.operator === '!' &&
+    (node.argument.type === 'Literal' ? !node.argument.value === value : boolean(node.argument, !value, budget - 1))));
+const firstPromptText = node => staticText(node) ?? (node?.type === 'BinaryExpression' && node.operator === '+'
   ? firstPromptText(node.left) || firstPromptText(node.right)
-  : staticText(node) ?? (node?.type === 'TemplateLiteral' ? node.quasis[0].value.cooked : undefined);
+  : node?.type === 'TemplateLiteral' ? node.quasis[0].value.cooked : undefined);
 
 const isUndefined = node => node?.type === 'UnaryExpression' && node.operator === 'void' &&
   literal(node.argument, 0);
 
 export const AST_HELPERS = { literal, propertyName, member, boolean, staticText, firstPromptText };
+
+export function hasPatchAnchors(code, anchors) {
+  const matches = source => anchors.some(group =>
+    (Array.isArray(group) ? group : [group]).every(token => source.includes(token)));
+  if (matches(code)) return true;
+  // Normalize only the prefilter; edits still use original AST ranges.
+  const normalized = code.replace(/\\(?:u\{([\da-f]+)\}|u([\da-f]{4})|x([\da-f]{2}))/gi,
+    (match, point, unit, byte) => {
+      const value = parseInt(point ?? unit ?? byte, 16);
+      return value <= 0x10ffff ? String.fromCodePoint(value) : match;
+    }).replace(/(["'`])\s*\+\s*(["'`])/g, '');
+  return matches(normalized);
+}
 
 export const parsePatchSource = code => parse(code, {
   ecmaVersion: 'latest', sourceType: 'script', allowHashBang: true,
@@ -270,6 +301,17 @@ export function createPatchContext(tree, code, loadImport = () => undefined) {
         const right = value.context.text(value.node.right, new Set(seen), budget - 1);
         if (left !== undefined && right !== undefined) return left + right;
       }
+      if (value.node.type === 'TemplateLiteral') {
+        let text = value.node.quasis[0].value.cooked;
+        if (typeof text !== 'string') return;
+        for (let i = 0; i < value.node.expressions.length; i++) {
+          const part = value.context.text(value.node.expressions[i], new Set(seen), budget - 1);
+          const tail = value.node.quasis[i + 1].value.cooked;
+          if (part === undefined || typeof tail !== 'string') return;
+          text += part + tail;
+        }
+        return text;
+      }
     },
     resolve(node, seen = new Set(), budget = 32) {
       if (!node || budget <= 0) return;
@@ -337,7 +379,8 @@ function hasGate(node, id) {
 function hasRemoteSettingsContext(node) {
   let found = false;
   walk(node, child => {
-    const strings = child.type === 'Literal' && typeof child.value === 'string' ? [child.value]
+    const text = staticText(child);
+    const strings = text !== undefined ? [text]
       : child.type === 'TemplateLiteral' ? child.quasis.map(quasi => quasi.value.cooked ?? '') : [];
     if (strings.some(value => value.includes('Remote settings:') || value.includes('remote-settings.json'))) found = true;
   });
@@ -346,7 +389,7 @@ function hasRemoteSettingsContext(node) {
 
 export function scanAstPatches(code, readTree = () => parsePatchSource(code), readContext) {
   const results = Object.fromEntries(AST_PATCH_IDS.map(id => [id, { matches: [], protected: [], present: false, patched: false }]));
-  if (!anchors.some(anchor => code.includes(anchor))) return results;
+  if (!hasPatchAnchors(code, anchors)) return results;
   const tree = readTree();
   const context = readContext ? readContext() : createPatchContext(tree, code);
   const functionNode = node => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(node?.type);
@@ -401,17 +444,12 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
     return values;
   };
 
-  const functions = new Map();
   const wigglyLiterals = new Set(), wigglyHandled = new Set();
   let pairingHandled = false;
   const MISSING_SENTINEL = '[Tool result missing due to internal error]';
-  const resolvesToMissingSentinel = code.includes(MISSING_SENTINEL) ? pairingScopeResolver(tree, MISSING_SENTINEL) : () => false;
-  walk(tree, node => {
-    if (node.type === 'FunctionDeclaration' && node.id?.type === 'Identifier') {
-      functions.set(node.id.name, node);
-    }
-  });
-  walk(tree, node => {
+  const hasMissingSentinel = hasPatchAnchors(code, [MISSING_SENTINEL]);
+  const resolvesToMissingSentinel = hasMissingSentinel ? pairingScopeResolver(tree, MISSING_SENTINEL) : () => false;
+  walk(tree, (node, parent) => {
     if (node.type === 'ClassDeclaration' || node.type === 'ClassExpression') {
       const members = new Map(node.body.body.map(entry => [propertyName(entry), entry]));
       const reader = members.get('getEnvironmentOverrides');
@@ -448,7 +486,7 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
         }
       }
     }
-    if (literal(node, 'tengu_wiggly_dove')) wigglyLiterals.add(node.start);
+    if (literal(node, 'tengu_wiggly_dove') && !literal(parent, 'tengu_wiggly_dove')) wigglyLiterals.add(node.start);
     if (functionNode(node) && node.params.length === 0) {
       const flagArguments = [];
       let teamEnv = false;
@@ -519,14 +557,14 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
         else results[id].present = true;
         if (names.length === 1 && enabled.length === 1 && enabled[0].kind === 'init' &&
             !patched &&
-            !props.some(p => p.type === 'SpreadElement' || (p.computed && p.key.type !== 'Literal'))) {
+            !props.some(p => p.type === 'SpreadElement' || (p.computed && propertyName(p) === undefined))) {
           if (!overridePredicate(id, enabled[0].value, enabled[0])) results[id].skipped = (results[id].skipped ?? 0) + 1;
         } else if (!patched) results[id].skipped = (results[id].skipped ?? 0) + 1;
       }
       const enabled = named('enabled');
       if (named('pixelValidation').length === 1 && enabled.length === 1 &&
           enabled[0].kind === 'init' &&
-          !props.some(p => p.type === 'SpreadElement' || (p.computed && p.key.type !== 'Literal'))) {
+          !props.some(p => p.type === 'SpreadElement' || (p.computed && propertyName(p) === undefined))) {
         const id = 'computer-use-default', value = enabled[0].value;
         if (alreadyPatched(value, id)) results[id].patched = true;
         else {
@@ -545,9 +583,14 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
       const enabledResult = expression => {
         if (expression.type === 'ChainExpression') return enabledResult(expression.expression);
         if (expression.type === 'LogicalExpression' && expression.operator === '&&') return enabledResult(expression.right);
-        if (expression.type === 'BinaryExpression' &&
-            (expression.operator === '===' && boolean(expression.right, true) ||
-             expression.operator === '!==' && boolean(expression.right, false))) return enabledResult(expression.left);
+        if (expression.type === 'BinaryExpression') {
+          const expected = ['===', '=='].includes(expression.operator) ? true :
+            ['!==', '!='].includes(expression.operator) ? false : undefined;
+          if (expected !== undefined) {
+            if (boolean(expression.right, expected)) return enabledResult(expression.left);
+            if (boolean(expression.left, expected)) return enabledResult(expression.right);
+          }
+        }
         return member(expression, 'enabled') ? expression : undefined;
       };
       if (alreadyPatched(node, id)) results[id].patched = true;
@@ -614,16 +657,23 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
       if (candidate && !rewritten) results[id].skipped = (results[id].skipped ?? 0) + 1;
     }
 
-    if (node.type === 'FunctionDeclaration' && node.params.length === 0 &&
-        !node.async && !node.generator && node.body.body.length === 1 &&
-        node.body.body[0].type === 'ReturnStatement') {
-      const value = node.body.body[0].argument;
+    if (functionNode(node) && node.params.length === 0 && !node.async && !node.generator) {
+      const statements = node.body.type === 'BlockStatement'
+        ? node.body.body.filter(statement => !statement.directive && statement.type !== 'EmptyStatement') : [];
+      const value = node.body.type !== 'BlockStatement' ? node.body :
+        statements.length === 1 && statements[0].type === 'ReturnStatement' ? statements[0].argument : undefined;
       if (literal(value, 'external')) edit('user-type-ant', value, '"ant"');
-      const standalone = expr => expr?.type === 'BinaryExpression' && expr.operator === '===' &&
-        member(expr.left, 'isStandaloneExecutable') && expr.left.object.name === 'Bun' && boolean(expr.right, true);
-      const typeofBun = expr => expr?.type === 'BinaryExpression' && expr.operator === '<' &&
-        expr.left.type === 'UnaryExpression' && expr.left.operator === 'typeof' &&
-        expr.left.argument.name === 'Bun' && literal(expr.right, 'u');
+      const standaloneMember = expr => member(expr, 'isStandaloneExecutable') && expr.object.name === 'Bun';
+      const standalone = expr => standaloneMember(expr) ||
+        expr?.type === 'BinaryExpression' && ['===', '=='].includes(expr.operator) &&
+          (standaloneMember(expr.left) && boolean(expr.right, true) ||
+           standaloneMember(expr.right) && boolean(expr.left, true));
+      const bunType = expr => expr?.type === 'UnaryExpression' && expr.operator === 'typeof' && expr.argument.name === 'Bun';
+      const typeofBun = expr => expr?.type === 'BinaryExpression' &&
+        (expr.operator === '<' && bunType(expr.left) && literal(expr.right, 'u') ||
+         expr.operator === '>' && bunType(expr.right) && literal(expr.left, 'u') ||
+         ['!==', '!='].includes(expr.operator) &&
+           (bunType(expr.left) && literal(expr.right, 'undefined') || bunType(expr.right) && literal(expr.left, 'undefined')));
       if (standalone(value) || (value?.type === 'LogicalExpression' && value.operator === '&&' &&
           typeofBun(value.left) && standalone(value.right))) edit('bun-standalone-executable', value, '!0');
       if (value?.type === 'UnaryExpression' && value.operator === '!' &&
@@ -634,7 +684,7 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
       }
     }
 
-    if (node.type === 'FunctionDeclaration' && node.params.length === 0 &&
+    if (functionNode(node) && node.params.length === 0 && node.body.type === 'BlockStatement' &&
         !node.async && !node.generator) {
       const statements = node.body.body;
       const cached = statements.find(statement => statement.type === 'VariableDeclaration' &&
@@ -653,8 +703,8 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
         declaration.init.callee.type === 'Identifier' &&
         declaration.id.properties.some(property => property.type === 'Property' &&
           propertyName(property) === 'eligible'));
-      const helper = eligibility && functions.get(eligibility.init.callee.name);
-      if (helper && hasRemoteSettingsContext(helper)) {
+      const helper = eligibility && context.resolve(eligibility.init.callee)?.node;
+      if (functionNode(helper) && hasRemoteSettingsContext(helper)) {
         const id = 'remote-settings-off';
         if (!cachedReturn) results[id].present = true;
         else {
@@ -692,7 +742,7 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
               if (returnObj?.type !== 'ObjectExpression') return;
               const props = returnObj.properties.filter(p => p.type === 'Property');
               if (props.length !== 4 || returnObj.properties.length !== 4 ||
-                  props.some(p => p.kind !== 'init' || p.method || (p.computed && p.key.type !== 'Literal')) ||
+                  props.some(p => p.kind !== 'init' || p.method || (p.computed && propertyName(p) === undefined)) ||
                   new Set(props.map(propertyName)).size !== 4) return;
               const hasType = props.some(p => propertyName(p) === 'type' && literal(p.value, 'tool_result'));
               const hasToolUseId = props.some(p => propertyName(p) === 'tool_use_id' && p.value?.type === 'Identifier' && p.value.name === idParam.name);
@@ -766,7 +816,7 @@ export function scanAstPatches(code, readTree = () => parsePatchSource(code), re
     results['wiggly-dove'].present = true;
     results['wiggly-dove'].matches = [];
   }
-  if (code.includes('[Tool result missing due to internal error]') && !pairingHandled) {
+  if (hasMissingSentinel && !pairingHandled) {
     results['tool-result-pairing-recovery'].present = true;
     results['tool-result-pairing-recovery'].matches = [];
   }

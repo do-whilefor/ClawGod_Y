@@ -2,7 +2,7 @@
 import { readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, renameSync, unlinkSync } from 'fs';
 import { join, dirname, relative, resolve as resolvePath, sep } from 'path';
 import { fileURLToPath } from 'url';
-import { AST_PATCH_IDS, scanAstPatches, applyAstEdits, parsePatchSource, createPatchContext } from './ast-patches.mjs';
+import { AST_PATCH_IDS, scanAstPatches, applyAstEdits, parsePatchSource, createPatchContext, hasPatchAnchors } from './ast-patches.mjs';
 import { PENTEST_AST_PATCH_IDS, PENTEST_AST_META, PENTEST_REQUIRED, scanPentestPatches, pruneRuntimeGraph } from './pentest-patches.mjs';
 import { FEATURES, featuresMeta } from './patch-registry.mjs';
 
@@ -157,7 +157,7 @@ const upstreamPatches = [
     optional: true,
     fallbacks: [{
       pattern: /function\s+([\w$]+)\s*\(\s*([\w$]+)\s*\)\s*\{\s*(?:let|const|var)\s+([\w$]+)\s*=\s*Math\.max\(\s*0\s*,\s*Math\.ceil\(\s*\(\s*\2\s*-\s*(?:50000|50_000|5[eE]4)\s*\)\s*\/\s*(?:50000|50_000|5[eE]4)\s*\)\s*\)\s*;\s*return\s+Math\.min\(\s*([\w$]+)\s*,\s*([\w$]+)\s*\+\s*\3\s*\*\s*(?:1[eE]4|10000|10_000)\s*\)\s*;?\s*\}/g,
-      nodeType: 'FunctionDeclaration',
+      nodeType: ['FunctionDeclaration', 'FunctionExpression'],
     }],
   },
   {
@@ -181,7 +181,7 @@ const upstreamPatches = [
     optional: true,
     fallbacks: [{
       pattern: /function\s+([\w$]+)\s*\(\s*\)\s*\{\s*(?:let|const|var)\s+([\w$]+)\s*=\s*[^;{}]{1,300}?\?\.maxRetries\s*;\s*return\s+typeof\s+\2\s*===?\s*["']number["']\s*&&\s*Number\.isInteger\(\s*\2\s*\)\s*&&\s*\2\s*>=\s*0\s*\?\s*\{\s*value\s*:\s*\2\s*,\s*src\s*:\s*["']gb["']\s*\}\s*:\s*\{\s*value\s*:\s*[\w$]+\s*,\s*src\s*:\s*["']default["']\s*\}\s*;?\s*\}/g,
-      nodeType: 'FunctionDeclaration',
+      nodeType: ['FunctionDeclaration', 'FunctionExpression'],
     }],
   },
   {
@@ -198,7 +198,7 @@ const upstreamPatches = [
     name: 'Auto-mode unlock for third-party API (inline gate)',
     pattern: /if\((?:([\w$]+)!=="firstParty"&&(?:\1!=="anthropicAws"|![\w$]+\(\1\))[^;]*|[\w$]+\(\)&&\([\w$]+==="claude-opus-4-6"\|\|[\w$]+==="claude-sonnet-4-6"\|\|[\w$]+\.includes\("haiku"\)[^;]*?\))\)return!1;/g,
     replacer: (m) => `if(globalThis.__clawgodPatches?.[${JSON.stringify('auto-mode-inline-gate')}]===!1&&` + m.slice(3, -10) + `)return!1;`,
-    sentinel: '!=="firstParty"&&',
+    sentinel: ['!=="firstParty"', '&&'],
   },
 
   {
@@ -207,7 +207,7 @@ const upstreamPatches = [
     pattern: /if\(([\w$]+)\.length===0&&([\w$]+)\.length>0\)([\w$]+)\("input_image_drag","read_failed"\),([\w$]+)\.push\(\.\.\.\2\)/g,
     replacer: (m, L, R, at, D) =>
       `if(${L}.length===0&&${R}.length>0){${at}("input_image_drag","read_failed");if(d&&${D}.length===0){m();return}${D}.push(...${R})}`,
-    sentinel: '"input_image_drag","read_failed"',
+    sentinel: ['input_image_drag', 'read_failed'],
     optional: true,
   },
 
@@ -217,11 +217,11 @@ const upstreamPatches = [
     pattern: /function ([\w$]+)\(\)\{if\(!([\w$]+)\("true"\)\)return!1;if\([\w$]+\(\)\)return!1;return process\.env\.CLAUDE_CODE_ENTRYPOINT!=="local-agent"\}/g,
     replacer: (m, fn, envCheck) =>
       `function ${fn}(){if(!${envCheck}(process.env.EMBEDDED_SEARCH_TOOLS))return!1;if(typeof globalThis.__dpBinOk>"u"){try{var _w=process.platform==="win32"?"where":"which";require("child_process").execFileSync(_w,["bfs"],{timeout:2e3});require("child_process").execFileSync(_w,["ugrep"],{timeout:2e3});globalThis.__dpBinOk=!0}catch{globalThis.__dpBinOk=!1}}if(!globalThis.__dpBinOk)return!1;return process.env.CLAUDE_CODE_ENTRYPOINT!=="local-agent"}`,
-    sentinel: 'ct("true")',
+    sentinel: ['EMBEDDED_SEARCH_TOOLS', 'local-agent', 'CLAUDE_CODE_ENTRYPOINT'],
     optional: true,
     fallbacks: [{
       pattern: /function\s+([\w$]+)\s*\(\s*\)\s*\{\s*if\s*\(\s*!([\w$]+)\(\s*["']true["']\s*\)\s*\)\s*return\s*(?:!1|false)\s*;\s*if\s*\(\s*[\w$]+\(\s*\)\s*\)\s*return\s*(?:!1|false)\s*;\s*return\s+process\.env\.CLAUDE_CODE_ENTRYPOINT\s*!==\s*["']local-agent["']\s*;?\s*\}/g,
-      nodeType: 'FunctionDeclaration',
+      nodeType: ['FunctionDeclaration', 'FunctionExpression'],
     }],
   },
 
@@ -247,7 +247,7 @@ const upstreamPatches = [
       const fn = m.match(/^function ([\w$]+)/)[1];
       return `function ${fn}(){if(${gate('geo-detect-probe')})return null;` + m.slice(`function ${fn}(){`.length, -1) + `}`;
     },
-    sentinel: 'Asia/Shanghai',
+    sentinel: ['Asia/Shanghai', 'Asia/Urumqi'],
   },
   {
     id: 'geo-apostrophe-stego',
@@ -274,7 +274,7 @@ const upstreamPatches = [
     name: 'Remove CYBER_RISK_INSTRUCTION (unconditional)',
     pattern: /([\w$]+)="(IMPORTANT: Assist with authorized security testing[^"]*)"/g,
     replacer: (m, varName) => `${varName}=""`,
-    sentinel: 'Assist with authorized security testing',
+    sentinel: ['Assist with authorized security testing', 'IMPORTANT'],
   },
   {
     id: 'remove-url-restriction',
@@ -282,7 +282,7 @@ const upstreamPatches = [
     name: 'Remove URL generation restriction',
     pattern: /(\n\$\{[\w$]+\})(\nIMPORTANT: You must NEVER generate or guess URLs[^.]*\. You may use URLs provided by the user in their messages or local files\.)/g,
     replacer: (m, prefix, sentence) => `\${${gate('remove-url-restriction')}?"":\`${prefix}\`+'${sentence.replace('\n', '\\n')}'}`,
-    sentinel: 'IMPORTANT: You must NEVER generate or guess URLs',
+    sentinel: ['NEVER generate or guess URLs', 'URLs provided by the user'],
   },
   {
     id: 'remove-cautious-actions',
@@ -290,7 +290,7 @@ const upstreamPatches = [
     name: 'Remove cautious actions section',
     pattern: /function ([\w$]+)\(([\w$]*)\)\{(?:if\([\s\S]{1,200}?\)return`# Executing actions with care\n\n[\s\S]*?`;)?return`# Executing actions with care\n\n[\s\S]*?`\}/g,
     replacer: (m, fn, arg) => `function ${fn}(${arg}){if(${gate('remove-cautious-actions')})return\`\`;` + m.slice(`function ${fn}(${arg}){`.length, -1) + `}`,
-    sentinel: '# Executing actions with care',
+    sentinel: ['# Executing actions with care'],
   },
   {
     id: 'remove-not-logged-in',
@@ -348,7 +348,7 @@ const upstreamPatches = [
       pattern: /[\w$]+(?:\.join)?\(\s*[\w$]+\(\s*\)\s*,\s*[\w$]+\s*\?\s*["']claude\.exe["']\s*:\s*["']claude["']\s*\)/g,
       nodeType: 'CallExpression',
     }],
-    sentinel: '?"claude.exe":"claude")',
+    sentinel: ['claude.exe', '"claude"'],
     optional: true,
   },
   {
@@ -530,7 +530,9 @@ function collectMatches(p) {
           }
         }
       }
-      return nodes.get(match.index)?.some(node => node.type === type && node.end === match.index + match[0].length);
+      const types = Array.isArray(type) ? type : [type];
+      return nodes.get(match.index)?.some(node =>
+        types.includes(node.type) && node.end === match.index + match[0].length);
     };
     for (const [index, rule] of rules.entries()) {
       let matches;
@@ -686,19 +688,19 @@ for (const p of [...patches.filter(p => p.ast), ...patches.filter(p => !p.ast)])
       skipped++;
       continue;
     }
-    const optionalAnchorPresent = p.ast ? astPresent.has(p.id) :
+    const sentinels = p.ast ? [p.id] :
       (Array.isArray(p.sentinel) ? p.sentinel : [p.sentinel])
-        .some(sentinel => typeof sentinel === 'string' && Object.values(files).some(content => content.includes(sentinel)));
-    if (p.optional && !optionalAnchorPresent) {
+        .filter(s => typeof s === 'string' && s.length > 0);
+    const anchorPresent = p.ast ? astPresent.has(p.id) :
+      sentinels.length > 0 && Object.values(files).some(content => hasPatchAnchors(content, [sentinels]));
+    if (p.optional && !anchorPresent) {
       console.log(`  ⏭  ${p.name} (not present in this version)`);
       skipped++;
       continue;
     }
-    if (p.sentinel !== undefined || (p.ast && astPresent.has(p.id))) {
-      const sentinels = p.ast ? [p.id] : (Array.isArray(p.sentinel) ? p.sentinel : [p.sentinel]);
-      const stillPresent = p.ast ? sentinels : sentinels.filter((s) => Object.values(files).some((c) => c.includes(s)));
-      if (stillPresent.length > 0) {
-        const detail = stillPresent.map((s) => JSON.stringify(s)).join(', ');
+    if (p.sentinel !== undefined || (p.ast && anchorPresent)) {
+      if (anchorPresent) {
+        const detail = sentinels.map((s) => JSON.stringify(s)).join(', ');
         console.log(`  ⚠️  ${p.name} — ${p.ast ? 'AST matcher' : 'regex'} stale, sentinel still in source: ${detail} (skipped, upstream behavior kept)`);
         skipped++;
         unverified++;
