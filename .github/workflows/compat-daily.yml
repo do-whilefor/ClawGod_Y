@@ -13,6 +13,8 @@ on:
       - install.ps1
       - src/**
       - .github/workflows/compat-daily.yml
+      - .github/workflows/installer-checks.yml
+      - .github/workflows/release.yml
       - .github/workflows/close-inactive-issues.yml
       - .github/scripts/**
   pull_request:
@@ -22,6 +24,8 @@ on:
       - install.ps1
       - src/**
       - .github/workflows/compat-daily.yml
+      - .github/workflows/installer-checks.yml
+      - .github/workflows/release.yml
       - .github/workflows/close-inactive-issues.yml
       - .github/scripts/**
 
@@ -30,6 +34,9 @@ permissions:
   issues: write
 
 jobs:
+  installer-checks:
+    uses: ./.github/workflows/installer-checks.yml
+
   build-sources:
     name: Generated installers are current
     runs-on: ubuntu-latest
@@ -66,9 +73,6 @@ jobs:
 
       - name: Run updater environment regression tests
         run: node src/shared/updater.test.mjs
-
-      - name: Run native binary refresh regression tests
-        run: node src/shared/native-refresh.test.mjs
 
       - name: Run bounded startup verification regression tests
         run: node src/shared/startup-check.test.mjs
@@ -179,8 +183,7 @@ jobs:
           version=$(npm view "@anthropic-ai/claude-code@$CLAUDE_CHANNEL" version)
           echo "Testing Claude $CLAUDE_CHANNEL -> $version"
           echo "CLAUDE_VERSION=$version" >> "$GITHUB_ENV"
-          sed "s/^VERSION=\"[^\"]*\"/VERSION=\"$version\"/" install.sh > "$RUNNER_TEMP/install.sh"
-          bash "$RUNNER_TEMP/install.sh" 2>&1 | tee /tmp/install.log
+          bash install.sh "$CLAUDE_CHANNEL" 2>&1 | tee /tmp/install.log
 
       - name: Verify install artifacts
         shell: bash
@@ -192,6 +195,8 @@ jobs:
           version=$(cat "$HOME/.clawgod/.source-version")
           echo "Source: $version"
           [[ "$version" == "$CLAUDE_VERSION" ]] || { echo "::error::expected Claude $CLAUDE_VERSION, installed $version"; exit 1; }
+          native_version=$("$HOME/.clawgod/claude.fallback" --version)
+          [[ "$native_version" == "$version (Claude Code)" ]] || { echo "::error::native subprocess version mismatch: $native_version"; exit 1; }
 
       - name: Assert renderer runtime was reported
         shell: bash
@@ -457,14 +462,6 @@ jobs:
         with:
           bun-version: ${{ matrix.bun }}
 
-      - name: Test Windows launcher recovery and repeated installs
-        shell: powershell
-        run: ./src/windows/launchers.test.ps1
-
-      - name: Test Windows clean source recovery
-        shell: powershell
-        run: ./src/windows/source-recovery.test.ps1
-
       - name: Test bounded startup verification and configured-provider version queries
         shell: powershell
         run: |
@@ -539,7 +536,7 @@ jobs:
       - name: Configure a provider before fresh installation
         run: node src/ci/provider-startup-fixture.cjs seed
 
-      - name: Run install.ps1 through Invoke-Expression (npm-fallback path)
+      - name: Run install.ps1 with version argument (npm-fallback path)
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -553,8 +550,7 @@ jobs:
             $installerPath,
             [System.Text.Encoding]::ASCII
           )
-          $installer = $installer -replace '(?m)^\$Version = "[^"]*"', ('$Version = "' + $version + '"')
-          Invoke-Expression $installer *>&1 |
+          & ([scriptblock]::Create($installer)) $env:CLAUDE_CHANNEL *>&1 |
             Tee-Object -FilePath $log
 
       - name: Verify install artifacts
@@ -584,6 +580,10 @@ jobs:
           $version = (Get-Content (Join-Path $clawDir '.source-version') -Raw).Trim()
           Write-Host "Source: $version"
           if ($version -ne $env:CLAUDE_VERSION) { throw "Expected Claude $env:CLAUDE_VERSION, installed $version" }
+          $nativeVersion = (& (Join-Path $clawDir 'claude.fallback.exe') --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or $nativeVersion -ne "$version (Claude Code)") {
+            throw "Native subprocess version mismatch: $nativeVersion"
+          }
 
       - name: Assert renderer runtime was reported
         shell: powershell

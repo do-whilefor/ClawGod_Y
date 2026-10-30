@@ -9,6 +9,9 @@ permissions:
   contents: write
 
 jobs:
+  installer-checks:
+    uses: ./.github/workflows/installer-checks.yml
+
   smoke:
     name: Release smoke (Claude ${{ matrix.claude }})
     runs-on: ubuntu-latest
@@ -46,14 +49,15 @@ jobs:
           set -euo pipefail
           version=$(npm view "@anthropic-ai/claude-code@$CLAUDE_CHANNEL" version)
           echo "Testing Claude $CLAUDE_CHANNEL -> $version"
-          sed "s/^VERSION=\"[^\"]*\"/VERSION=\"$version\"/" install.sh > "$RUNNER_TEMP/install.sh"
-          bash "$RUNNER_TEMP/install.sh" >/tmp/release-install.log 2>&1 || { cat /tmp/release-install.log; exit 1; }
+          bash install.sh "$CLAUDE_CHANNEL" >/tmp/release-install.log 2>&1 || { cat /tmp/release-install.log; exit 1; }
           installed=$(cat "$HOME/.clawgod/.source-version")
           [[ "$installed" == "$version" ]] || { echo "::error::expected Claude $version, installed $installed"; exit 1; }
+          native_version=$("$HOME/.clawgod/claude.fallback" --version)
+          [[ "$native_version" == "$version (Claude Code)" ]] || { echo "::error::native subprocess version mismatch: $native_version"; exit 1; }
           node "$HOME/.clawgod/startup-check.cjs" "$(command -v bun)" "$HOME/.clawgod/cli.cjs" --probe-tools
 
   release:
-    needs: smoke
+    needs: [smoke, installer-checks]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

@@ -7,10 +7,19 @@ BIN_DIR="$HOME/.local/bin"
 VERSION="2.1.314"
 CLAWGOD_SELF_VERSION="0.0.0-dev"
 
+VERSION_SELECTED=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --uninstall) UNINSTALL=1; shift ;;
-    *) printf 'Unknown installer option: %s\n' "$1" >&2; exit 2 ;;
+    *)
+      if [[ "$VERSION_SELECTED" = 1 || ! "$1" =~ ^(latest|stable|[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+        printf 'Invalid installer argument: %s\nUsage: bash install.sh [latest|stable|<version>] [--uninstall]\n' "$1" >&2
+        exit 2
+      fi
+      VERSION="$1"
+      VERSION_SELECTED=1
+      shift
+      ;;
   esac
 done
 
@@ -39,7 +48,8 @@ if [ "$UNINSTALL" = "1" ]; then
     fi
   done
   rm -rf "$CLAWGOD_DIR/node_modules" "$CLAWGOD_DIR/vendor" "$CLAWGOD_DIR/bun-runtime" "$CLAWGOD_DIR/cli.original.js" "$CLAWGOD_DIR/cli.original.js.bak" "$CLAWGOD_DIR/cli.original.cjs" "$CLAWGOD_DIR/cli.original.cjs.bak" "$CLAWGOD_DIR/source-backup.json" "$CLAWGOD_DIR/cli.js" "$CLAWGOD_DIR/cli.cjs" "$CLAWGOD_DIR/patch.mjs" "$CLAWGOD_DIR/ast-patches.mjs" "$CLAWGOD_DIR/pentest-patches.mjs" "$CLAWGOD_DIR/pentest-scanners.mjs" "$CLAWGOD_DIR/pentest-trimming.mjs" "$CLAWGOD_DIR/pentest-policy-text.mjs" "$CLAWGOD_DIR/pentest-pruner.mjs" "$CLAWGOD_DIR/lean-mode.cjs" "$CLAWGOD_DIR/lean-settings.json" "$CLAWGOD_DIR/.lean-disabled" "$CLAWGOD_DIR/.lean-max" "$CLAWGOD_DIR/acorn.mjs" "$CLAWGOD_DIR/acorn.LICENSE" "$CLAWGOD_DIR/patch.js" "$CLAWGOD_DIR/extract-natives.mjs" "$CLAWGOD_DIR/post-process.mjs" "$CLAWGOD_DIR/repatch.mjs" "$CLAWGOD_DIR/startup-check.cjs" "$CLAWGOD_DIR/startup-check.log" "$CLAWGOD_DIR/openai-proxy.cjs" "$CLAWGOD_DIR/feature-gates.cjs" "$CLAWGOD_DIR/runtime-helpers.cjs" "$CLAWGOD_DIR/bun-ant-shim.cjs" "$CLAWGOD_DIR/clawgod-import" "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback" "$CLAWGOD_DIR/.source-version"
-  rm -f "$CLAWGOD_DIR/compile-runtime.mjs" "$CLAWGOD_DIR/.compiled-runtime" "$CLAWGOD_DIR"/cli.compiled-*
+  rm -rf "$CLAWGOD_DIR/bunfs" "$CLAWGOD_DIR/pathmap.json"
+  rm -f "$CLAWGOD_DIR/patch-registry.mjs" "$CLAWGOD_DIR/system-prompt.md" "$CLAWGOD_DIR/probe-tools.log" "$CLAWGOD_DIR/.clawgod-version" "$CLAWGOD_DIR/compile-runtime.mjs" "$CLAWGOD_DIR/.compiled-runtime" "$CLAWGOD_DIR"/cli.compiled-*
   hash -r 2>/dev/null
   info "ClawGod uninstalled"
   echo ""
@@ -162,7 +172,7 @@ if ( cd "$NATIVE_BIN_TMPDIR" && npm pack "$NPM_PKG@$VERSION" --silent >/dev/null
 fi
 if [ -z "$NATIVE_BIN" ]; then
   rm -rf "$NATIVE_BIN_TMPDIR"
-  warn "Failed to download $NPM_PKG from npm."
+  warn "Failed to download $NPM_PKG@$VERSION from npm."
   warn "  Install the official Claude Code binary manually:"
   warn "    curl -fsSL https://claude.ai/install.sh | bash"
   exit 1
@@ -174,6 +184,7 @@ ROLLBACK_FILES=(cli.original.cjs cli.original.cjs.bak cli.original.js .source-ve
   source-backup.json bunfs vendor pathmap.json extract-natives.mjs post-process.mjs
   openai-proxy.cjs feature-gates.cjs cli.cjs .clawgod-version
   startup-check.cjs compile-runtime.mjs .compiled-runtime runtime-helpers.cjs bun-ant-shim.cjs system-prompt.md
+  claude.fallback install.sh lean-settings.json patches.json
   patch.mjs patch-registry.mjs ast-patches.mjs pentest-patches.mjs pentest-scanners.mjs
   pentest-trimming.mjs pentest-policy-text.mjs pentest-pruner.mjs lean-mode.cjs acorn.mjs acorn.LICENSE)
 if [ -f "$CLAWGOD_DIR/cli.original.cjs" ] && [ -f "$CLAWGOD_DIR/.source-version" ]; then
@@ -194,6 +205,7 @@ rollback_install() {
   trap - EXIT
   if [ "$status" -ne 0 ]; then
     rm -f "$CLAWGOD_DIR/claude.staged"
+    rm -f "$CLAWGOD_DIR/install.sh.tmp" "$BIN_DIR/clawgod.clawgod-$$.tmp"
     if [ -n "$PREV_BACKUP_DIR" ]; then
       dim "Rolling back to previous working installation ..."
       for f in "${ROLLBACK_FILES[@]}"; do rm -rf "$CLAWGOD_DIR/$f"; done
@@ -12920,9 +12932,9 @@ if [ "$patch_status" -ne 0 ]; then
     warn "No previous working installation found to roll back."
   fi
   warn ""
-  warn "The new Claude Code build (${NATIVE_BIN_LABEL:-unknown}) is not yet supported by this ClawGod release."
+  warn "The selected Claude Code build (${NATIVE_BIN_LABEL:-unknown}) is not supported by this ClawGod release."
   warn "Optional unmatched patches are already skipped; required prompt injection and source errors cannot be skipped."
-  warn "Rerun the current installer to reinstall Claude Code 2.1.314."
+  warn "Rerun the installer with a compatible Claude Code version."
   exit "$patch_status"
 fi
 
@@ -13031,11 +13043,6 @@ if [ "$probe_rc" -ne 0 ]; then
   exit "$probe_rc"
 fi
 info "Tool and command tables load cleanly"
-rollback_install
-COMPILED_NAME=$(cat "$CLAWGOD_DIR/.compiled-runtime" 2>/dev/null || true)
-for compiled in "$CLAWGOD_DIR"/cli.compiled-*; do
-  [ "$compiled" = "$CLAWGOD_DIR/$COMPILED_NAME" ] || rm -f "$compiled"
-done
 
 
 IMPORT_BIN="$CLAWGOD_DIR/clawgod-import"
@@ -13078,13 +13085,7 @@ if [ ! -x \"\$BUN_BIN\" ]; then
   echo \"clawgod: install bun  curl -fsSL https://bun.sh/install | bash\" >&2
   exit 127
 fi
-LAUNCH_CLAUDE=\"\$(command -v claude 2>/dev/null || true)\"
-if [ -z \"\$LAUNCH_CLAUDE\" ] && [ -f \"$CLAWGOD_DIR/claude.fallback\" ]; then
-  LAUNCH_CLAUDE=\"$CLAWGOD_DIR/claude.fallback\"
-fi
-if [ -n \"\$LAUNCH_CLAUDE\" ]; then
-  export CLAUDE_CODE_EXECPATH=\"\$LAUNCH_CLAUDE\"
-fi
+export CLAUDE_CODE_EXECPATH=\"$CLAWGOD_DIR/claude.fallback\"
 export HERDR_AGENT=\"\${HERDR_AGENT:-claude}\"
 export IS_SANDBOX=\"\${IS_SANDBOX:-1}\"
 if [ \"\$1\" != \"--uninstall\" ] && [ -f \"$CLAWGOD_DIR/.compiled-runtime\" ]; then
@@ -13098,35 +13099,28 @@ write_launcher() {
   local dir
   dir=$(dirname "$target")
   mkdir -p "$dir"
-  rm -f "$target"
-  printf '%s\n' "$LAUNCHER_CONTENT" > "$target"
-  chmod +x "$target"
+  local temporary="$target.clawgod-$$.tmp"
+  printf '%s\n' "$LAUNCHER_CONTENT" > "$temporary"
+  chmod +x "$temporary"
+  [ ! -d "$target" ] || { err "Launcher target is a directory: $target"; return 1; }
+  mv -f "$temporary" "$target"
 }
 
-if ! command -v claude >/dev/null 2>&1; then
-  if [ -f "$CLAWGOD_DIR/claude.staged" ]; then
-    rm -f "$CLAWGOD_DIR/claude.fallback"
-    mv -f "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback"
-    chmod +x "$CLAWGOD_DIR/claude.fallback"
-  fi
-  dim "No existing claude found — launcher will fall back to $CLAWGOD_DIR/claude.fallback"
-else
-
-  rm -f "$CLAWGOD_DIR/claude.staged"
+if [ -f "$CLAWGOD_DIR/claude.staged" ]; then
+  rm -f "$CLAWGOD_DIR/claude.fallback"
+  mv -f "$CLAWGOD_DIR/claude.staged" "$CLAWGOD_DIR/claude.fallback"
 fi
-
-rm -f "$BIN_DIR/claude.orig"
-
-write_launcher "$BIN_DIR/clawgod"
-info "Command 'clawgod' → patched ($BIN_DIR/clawgod); 'claude' untouched"
+chmod +x "$CLAWGOD_DIR/claude.fallback"
 
 if [ -f "$0" ] && [ "$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" != "$CLAWGOD_DIR/install.sh" ]; then
-  cp "$0" "$CLAWGOD_DIR/install.sh" 2>/dev/null || true
+  cp "$0" "$CLAWGOD_DIR/install.sh.tmp"
+  mv -f "$CLAWGOD_DIR/install.sh.tmp" "$CLAWGOD_DIR/install.sh"
+elif [ ! -f "$0" ]; then
+  curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh -o "$CLAWGOD_DIR/install.sh.tmp"
+  [ -s "$CLAWGOD_DIR/install.sh.tmp" ] || { err "Downloaded uninstaller is empty"; exit 1; }
+  mv -f "$CLAWGOD_DIR/install.sh.tmp" "$CLAWGOD_DIR/install.sh"
 fi
-if [ ! -f "$CLAWGOD_DIR/install.sh" ]; then
-  curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh -o "$CLAWGOD_DIR/install.sh" 2>/dev/null || true
-fi
-chmod +x "$CLAWGOD_DIR/install.sh" 2>/dev/null || true
+chmod +x "$CLAWGOD_DIR/install.sh"
 
 
 if ! echo "$PATH" | grep -q "$BIN_DIR"; then
@@ -13142,6 +13136,15 @@ if ! echo "$PATH" | grep -q "$BIN_DIR"; then
   dim "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> $SHELL_RC && source $SHELL_RC"
 fi
 
+write_launcher "$BIN_DIR/clawgod"
+rollback_install
+info "Command 'clawgod' → patched ($BIN_DIR/clawgod); 'claude' untouched"
+COMPILED_NAME=$(cat "$CLAWGOD_DIR/.compiled-runtime" 2>/dev/null || true)
+for compiled in "$CLAWGOD_DIR"/cli.compiled-*; do
+  [ "$compiled" = "$CLAWGOD_DIR/$COMPILED_NAME" ] || rm -f "$compiled" || true
+done
+rm -f "$BIN_DIR/claude.orig" || true
+
 hash -r 2>/dev/null
 
 echo ""
@@ -13150,7 +13153,7 @@ echo ""
 dim "  clawgod           — Start patched Claude Code (pentest build)"
 dim "  claude            — Original unpatched Claude Code (untouched)"
 echo ""
-dim "  Claude Code version: 2.1.314"
+dim "  Claude Code version: $NATIVE_BIN_LABEL"
 dim "  clawgod --version   — Query the Claude Code version"
 dim "  clawgod --uninstall — Uninstall ClawGod"
 dim "  Vanilla 'claude update' keeps working and updates only the original."

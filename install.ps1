@@ -1,10 +1,12 @@
 #Requires -Version 5.1
 param(
+    [Parameter(Position = 0)]
+    [ValidatePattern('^(latest|stable|[0-9]+\.[0-9]+\.[0-9]+)$')]
+    [string]$Version = "2.1.314",
     [switch]$Uninstall
 )
 
 $ErrorActionPreference = "Stop"
-$Version = "2.1.314"
 
 $ClawDir = Join-Path $env:USERPROFILE ".clawgod"
 $BinDir  = Join-Path $env:USERPROFILE ".local\bin"
@@ -36,6 +38,7 @@ if ($Uninstall) {
         if (Test-Path $p) { Remove-Item -Recurse -Force $p }
     }
     Remove-Item -LiteralPath (Join-Path $ClawDir "compile-runtime.mjs"), (Join-Path $ClawDir ".compiled-runtime") -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $ClawDir "patch-registry.mjs"), (Join-Path $ClawDir "system-prompt.md"), (Join-Path $ClawDir "probe-tools.log"), (Join-Path $ClawDir ".clawgod-version") -Force -ErrorAction SilentlyContinue
     Get-ChildItem -LiteralPath $ClawDir -Filter "cli.compiled-*" -File -ErrorAction SilentlyContinue |
         ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
     Get-ChildItem -LiteralPath $ClawDir -Filter "claude.fallback.*.exe" -File -ErrorAction SilentlyContinue |
@@ -310,7 +313,7 @@ $RollbackDir = $null
 $script:RollbackPending = $false
 $RollbackFiles = @("cli.original.cjs","cli.original.cjs.bak","cli.original.js",".source-version",
     "source-backup.json","bunfs","vendor","pathmap.json","extract-natives.mjs","post-process.mjs",
-    "openai-proxy.cjs","feature-gates.cjs","cli.cjs",".clawgod-version",
+    "openai-proxy.cjs","feature-gates.cjs","cli.cjs",".clawgod-version","claude.fallback.exe","install.ps1","lean-settings.json","patches.json",
     "startup-check.cjs","compile-runtime.mjs",".compiled-runtime","runtime-helpers.cjs","bun-ant-shim.cjs","system-prompt.md","patch.mjs","patch-registry.mjs","ast-patches.mjs","pentest-patches.mjs","pentest-scanners.mjs","pentest-trimming.mjs","pentest-policy-text.mjs","pentest-pruner.mjs","lean-mode.cjs","acorn.mjs","acorn.LICENSE")
 $origCjs = Join-Path $ClawDir "cli.original.cjs"
 $sourceVerFile = Join-Path $ClawDir ".source-version"
@@ -330,6 +333,7 @@ if ((Test-Path $origCjs) -and (Test-Path $sourceVerFile)) {
 
 function Restore-Install {
     Remove-Item -LiteralPath (Join-Path $ClawDir "claude.staged.exe") -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $ClawDir "install.ps1.tmp"), (Join-Path $BinDir "clawgod.cmd.tmp") -Force -ErrorAction SilentlyContinue
     if (-not $script:RollbackPending) { return }
     $script:RollbackPending = $false
     if (-not $RollbackDir) { return }
@@ -13089,9 +13093,9 @@ if ($patchExitCode -ne 0) {
         Write-Err "No previous working installation found to roll back."
     }
     Write-Err ""
-    Write-Err "The new Claude Code build ($NativeBinLabel) is not yet supported by this ClawGod release."
+    Write-Err "The selected Claude Code build ($NativeBinLabel) is not supported by this ClawGod release."
     Write-Err "Optional unmatched patches are already skipped; required prompt injection and source errors cannot be skipped."
-    Write-Err "Rerun the current installer to reinstall Claude Code 2.1.314."
+    Write-Err "Rerun the installer with a compatible Claude Code version."
     exit $exitCode
 }
 
@@ -13259,15 +13263,6 @@ if ($probeExitCode -ne 0) {
     exit $probeExitCode
 }
 Write-OK "Tool and command tables load cleanly"
-$script:RollbackPending = $false
-if ($RollbackDir) { Remove-Item -LiteralPath $RollbackDir -Recurse -Force -ErrorAction SilentlyContinue }
-$compiledName = $null
-if (Test-Path (Join-Path $ClawDir ".compiled-runtime")) {
-    $compiledName = (Get-Content -LiteralPath (Join-Path $ClawDir ".compiled-runtime") -Raw).Trim()
-}
-Get-ChildItem -LiteralPath $ClawDir -Filter "cli.compiled-*" -File |
-    Where-Object { $_.Name -ne $compiledName } |
-    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
 
 
 $cliPathInCmd = "%USERPROFILE%\.clawgod\cli.cjs"
@@ -13283,39 +13278,21 @@ if ($normalizedBunBin.Equals($normalizedUserProfile, [StringComparison]::Ordinal
     $bunPathInCmd = $BunBin
 }
 
-$claudeExeForPath = $null
-$foundClaude = Get-Command claude.exe -ErrorAction SilentlyContinue
-if ($foundClaude) {
-    $claudeExeForPath = $foundClaude.Source
-} else {
-    foreach ($loc in @(
-        (Join-Path $BinDir "claude.exe"),
-        (Join-Path $env:USERPROFILE ".local\share\claude\versions")
-    )) {
-        if (Test-Path $loc -PathType Leaf) { $claudeExeForPath = $loc; break }
-        if (Test-Path $loc -PathType Container) {
-            $latestExe = Get-ChildItem $loc -Filter "claude*.exe" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            if ($latestExe) { $claudeExeForPath = $latestExe.FullName; break }
+$claudeExeForPath = Join-Path $ClawDir "claude.fallback.exe"
+$stagedFallback = Join-Path $ClawDir "claude.staged.exe"
+if (Test-Path $stagedFallback) {
+    if (Test-Path $claudeExeForPath) {
+        try {
+            Remove-Item -LiteralPath $claudeExeForPath -Force -ErrorAction Stop
+        } catch {
+            $retiredFallback = Join-Path $ClawDir ("claude.fallback." + [Guid]::NewGuid().ToString('N') + ".exe")
+            Move-Item -LiteralPath $claudeExeForPath -Destination $retiredFallback -ErrorAction Stop
         }
     }
+    Move-Item -LiteralPath $stagedFallback -Destination $claudeExeForPath -Force
+    Write-OK "Native execPath refreshed for the selected Claude version (claude.fallback.exe)"
 }
-if (-not $claudeExeForPath) {
-    $claudeExeForPath = Join-Path $ClawDir "claude.fallback.exe"
-    $stagedFallback = Join-Path $ClawDir "claude.staged.exe"
-    if (Test-Path $stagedFallback) {
-        if (Test-Path $claudeExeForPath) {
-            try {
-                Remove-Item -LiteralPath $claudeExeForPath -Force -ErrorAction Stop
-            } catch {
-                $retiredFallback = Join-Path $ClawDir ("claude.fallback." + [Guid]::NewGuid().ToString('N') + ".exe")
-                Move-Item -LiteralPath $claudeExeForPath -Destination $retiredFallback -ErrorAction Stop
-            }
-        }
-        Move-Item -LiteralPath $stagedFallback -Destination $claudeExeForPath -Force
-        Write-OK "Native execPath fallback refreshed (claude.fallback.exe)"
-    }
-    Write-Dim "No existing claude.exe found -- CLAUDE_CODE_EXECPATH will point at $claudeExeForPath"
-}
+if (-not (Test-Path -LiteralPath $claudeExeForPath -PathType Leaf)) { throw 'Selected Claude native executable is missing' }
 $normalizedClaudeExe = $claudeExeForPath.TrimEnd('\', '/')
 if ($normalizedClaudeExe.StartsWith($userProfilePrefix, [StringComparison]::OrdinalIgnoreCase)) {
     $claudeExeInCmd = "%USERPROFILE%\" + $normalizedClaudeExe.Substring($normalizedUserProfile.Length).TrimStart('\', '/')
@@ -13350,21 +13327,42 @@ exit /b %ERRORLEVEL%
 $sourceLaunch
 "@
 $launcherContent = $launcherContent.Replace($sourceLaunch, $compiledLaunch)
-$launcherContent | Set-Content (Join-Path $BinDir "clawgod.cmd") -Encoding Default
-Write-OK "Command 'clawgod' -> patched; 'claude' untouched"
+$launcherContent | Set-Content (Join-Path $BinDir "clawgod.cmd.tmp") -Encoding Default
 
 $selfPath = $MyInvocation.MyCommand.Path
 if ($selfPath -and (Test-Path $selfPath) -and
     ([System.IO.Path]::GetFullPath($selfPath) -ne [System.IO.Path]::GetFullPath((Join-Path $ClawDir "install.ps1")))) {
-    Copy-Item -LiteralPath $selfPath -Destination (Join-Path $ClawDir "install.ps1") -Force -ErrorAction SilentlyContinue
+    Copy-Item -LiteralPath $selfPath -Destination (Join-Path $ClawDir "install.ps1.tmp") -Force -ErrorAction Stop
+    Move-Item -LiteralPath (Join-Path $ClawDir "install.ps1.tmp") -Destination (Join-Path $ClawDir "install.ps1") -Force
+} elseif (-not $selfPath) {
+    $installerSource = Invoke-RestMethod "https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1"
+    if ([string]::IsNullOrWhiteSpace($installerSource)) { throw 'Downloaded uninstaller is empty' }
+    [System.IO.File]::WriteAllText((Join-Path $ClawDir "install.ps1.tmp"), $installerSource,
+        (New-Object System.Text.UTF8Encoding $false))
+    Move-Item -LiteralPath (Join-Path $ClawDir "install.ps1.tmp") -Destination (Join-Path $ClawDir "install.ps1") -Force
 }
-if (-not (Test-Path (Join-Path $ClawDir "install.ps1"))) {
-    try {
-        [System.IO.File]::WriteAllText((Join-Path $ClawDir "install.ps1"),
-            (Invoke-RestMethod "https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1"),
-            (New-Object System.Text.UTF8Encoding $false))
-    } catch {}
+if (-not (Test-Path -LiteralPath (Join-Path $ClawDir "install.ps1") -PathType Leaf) -or
+    (Get-Item -LiteralPath (Join-Path $ClawDir "install.ps1")).Length -eq 0) { throw 'Local uninstaller is missing or empty' }
+
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($userPath -notlike "*$BinDir*") {
+    [Environment]::SetEnvironmentVariable("Path", "$BinDir;$userPath", "User")
+    $env:Path = "$BinDir;$env:Path"
+    Write-OK "Added $BinDir to user PATH"
+    Write-Dim "(restart terminal for PATH to take effect)"
 }
+if (Test-Path -LiteralPath (Join-Path $BinDir "clawgod.cmd") -PathType Container) { throw 'Launcher target is a directory' }
+Move-Item -LiteralPath (Join-Path $BinDir "clawgod.cmd.tmp") -Destination (Join-Path $BinDir "clawgod.cmd") -Force -ErrorAction Stop
+$script:RollbackPending = $false
+if ($RollbackDir) { Remove-Item -LiteralPath $RollbackDir -Recurse -Force -ErrorAction SilentlyContinue }
+Write-OK "Command 'clawgod' -> patched; 'claude' untouched"
+$compiledName = $null
+if (Test-Path (Join-Path $ClawDir ".compiled-runtime")) {
+    $compiledName = (Get-Content -LiteralPath (Join-Path $ClawDir ".compiled-runtime") -Raw).Trim()
+}
+Get-ChildItem -LiteralPath $ClawDir -Filter "cli.compiled-*" -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne $compiledName } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
 
 foreach ($leftover in @("claude.orig.cmd", "claude.orig.exe", "claude.cmd")) {
     $p = Join-Path $BinDir $leftover
@@ -13379,27 +13377,13 @@ Remove-Item -Force (Join-Path $ClawDir "claude.staged.exe") -ErrorAction Silentl
 Get-ChildItem -LiteralPath $ClawDir -Filter "claude.fallback.*.exe" -File -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
 
-if ((Get-Command claude.exe -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $ClawDir "claude.fallback.exe"))) {
-    Remove-Item -Force (Join-Path $ClawDir "claude.fallback.exe") -ErrorAction SilentlyContinue
-    Write-Dim "Removed execPath fallback; a real claude.exe is available"
-}
-
-
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($userPath -notlike "*$BinDir*") {
-    [Environment]::SetEnvironmentVariable("Path", "$BinDir;$userPath", "User")
-    $env:Path = "$BinDir;$env:Path"
-    Write-OK "Added $BinDir to user PATH"
-    Write-Dim "(restart terminal for PATH to take effect)"
-}
-
 Write-Host ""
 Write-Host "  ClawGod installed!" -ForegroundColor Green
 Write-Host ""
 Write-Dim "  clawgod           -- Start patched Claude Code (pentest build)"
 Write-Dim "  claude            -- Original unpatched Claude Code (untouched)"
 Write-Host ""
-Write-Dim "  Claude Code version: 2.1.314"
+Write-Dim "  Claude Code version: $NativeBinLabel"
 Write-Dim "  clawgod --version   -- Query the Claude Code version"
 Write-Dim "  clawgod --uninstall -- Uninstall ClawGod"
 Write-Dim "  Vanilla 'claude update' keeps working and updates only the original."

@@ -112,7 +112,7 @@ try {
     assert.equal(result.status, 7);
     assert.match(result.stdout, /Installation aborted/);
     assert.match(result.stdout, /No previous working installation found to roll back/);
-    assert.match(result.stdout, /Rerun the current installer/);
+    assert.match(result.stdout, /Rerun the installer with a compatible Claude Code version/);
     assert.doesNotMatch(result.stdout, /UNEXPECTED_SUCCESS/);
     const rollbackDir = join(dir, 'rollback-test');
     mkdirSync(rollbackDir);
@@ -141,7 +141,7 @@ try {
     result = rollbackShell(snapshotInstall + broken + replaceAst + apply);
     assert.equal(result.status, 9, result.stderr + result.stdout);
     assert.match(result.stdout, /Restored previous working installation \(2.1.280\)/);
-    assert.match(result.stdout, /The new Claude Code build \(2.1.299\) is not yet supported/);
+    assert.match(result.stdout, /The selected Claude Code build \(2.1.299\) is not supported/);
     assert.equal(readFileSync(join(rollbackDir, '.source-version'), 'utf8').trim(), '2.1.280');
     assert.equal(readFileSync(join(rollbackDir, 'cli.original.cjs'), 'utf8'), '// Old working 2.1.280');
     assert.equal(readFileSync(join(graphDir, 'commands.js'), 'utf8'), '// old graph');

@@ -1,0 +1,40 @@
+name: Installer lifecycle checks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    name: Installer lifecycle (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-26, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
+      - name: Verify generated installers
+        run: node build.js --check
+      - name: Check version selection, finalization failures and uninstall
+        run: node src/shared/installer-lifecycle.test.mjs
+      - name: Check Unix native subprocess version and official binary isolation
+        if: runner.os != 'Windows'
+        run: node src/shared/native-refresh.test.mjs
+      - name: Check Windows native isolation and recovery
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          ./src/windows/launchers.test.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./src/windows/source-recovery.test.ps1
