@@ -435,11 +435,10 @@ Write-OK "Patcher created (patch.mjs)"
 }
 if ($captureExitCode -ne 0) { Restore-Install; exit $captureExitCode }
 Write-Dim "Applying patches ..."
-$patchExitCode = 0
-& {
+$patchExitCode = & {
     $ErrorActionPreference = 'Continue'
     node (Join-Path $ClawDir "patch.mjs") 2>&1 | ForEach-Object { Write-Host "  $_" }
-    $script:patchExitCode = $LASTEXITCODE
+    $LASTEXITCODE
 }
 if ($patchExitCode -ne 0) {
     $exitCode = $patchExitCode
