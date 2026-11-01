@@ -21,7 +21,7 @@ ClawGod_Y is a runtime patch for the official [Claude Code](https://docs.anthrop
 
 The patch implementation draws on [0Chencc/clawgod](https://github.com/0Chencc/clawgod). Thanks to the original project for its open-source work. This fork keeps upstream's cross-version patch architecture and installs the patched runtime separately:
 
-- **`clawgod` starts patched Claude Code, installing v2.1.314 by default.** The patched runtime lives entirely under `~/.clawgod` (`%USERPROFILE%\.clawgod` on Windows).
+- **`clawgod` starts patched Claude Code, installing v2.1.316 by default.** The patched runtime lives entirely under `~/.clawgod` (`%USERPROFILE%\.clawgod` on Windows).
 - **If Claude Code is already installed, its original `claude` command stays unchanged.** A separate official Claude Code installation is not required; an existing vanilla `claude update` keeps working normally.
 - **Designed for compatibility across versions.** Patches use cross-version anchors and can be adapted to other Claude Code versions, but compatibility with every version is not guaranteed. You can select `latest`, `stable`, or a specific version during installation. Unmatched non-required patches produce warnings and are skipped; required prompt injection or source-processing failures still abort installation.
 - **Pentest-oriented patching**: tool-permission prompts and safety classifiers are bypassed by default, prompts are rewritten for authorized testing contexts, and unused office/consumer features are pruned.
@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1))) latest
 ```
 
-Replace `latest` in the examples with `stable` or a specific version (such as `2.1.314`) as needed. `latest` and `stable` use the versions associated with the corresponding npm tags.
+Replace `latest` in the examples with `stable` or a specific version (such as `2.1.316`) as needed. `latest` and `stable` use the versions associated with the corresponding npm tags.
 
 After installation, open a new terminal and run `clawgod` to start patched Claude. If official Claude Code was already installed, `claude` still starts the original. The patched runtime is stored in `~/.clawgod`, or `%USERPROFILE%\.clawgod` on Windows.
 
