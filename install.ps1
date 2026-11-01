@@ -1799,8 +1799,9 @@ function sentenceDropped(sentence) {
 
 const CUSTOM_PROMPT_MARK = 'clawgod:custom-prompt';
 
-const HOST_IDENTITY_NAMES = /claude(?:[\s_-]*code)?|anthropic|\u514b\u52b3\u5fb7|\u514b\u52de\u5fb7|\u30af\u30ed\u30fc\u30c9|\u30a2\u30f3\u30bd\u30ed\u30d4\u30c3\u30af|\ud074\ub85c\ub4dc|\uc564\ud2b8\ub85c\ud53d|\u043a\u043b\u043e\u0434|\u0430\u043d\u0442\u0440\u043e\u043f\u0438\u043a|\u0643\u0644\u0648\u062f|\u0623\u0646\u062b\u0631\u0648\u0628\u064a\u0643|\u0627\u0646\u062b\u0631\u0648\u0628\u064a\u0643|\u0915\u094d\u0932\u0949\u0921|\u090f\u0902\u0925\u094d\u0930\u094b\u092a\u093f\u0915/iu;
-const HOST_IDENTITY_ROLES = /\b(?:ai|llm|assistant|agent|chatbot|tool|language\s+model|artificial\s+intelligence)\b|\u4eba\u5de5\u667a\u80fd|\u4eba\u5de5\u667a\u6167|(?:\u5927(?:\u578b)?(?:\u8bed\u8a00|\u8a9e\u8a00)|\u8bed\u8a00|\u8a9e\u8a00)\u6a21\u578b|(?:\u7f16\u7a0b|\u7de8\u7a0b|\u7f16\u7801|\u7de8\u78bc|\u667a\u80fd)?\u52a9\u624b|\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8|\u4eba\u5de5\u77e5\u80fd|\u8a00\u8a9e\u30e2\u30c7\u30eb|\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8|\uc778\uacf5\s*\uc9c0\ub2a5|\uc5b8\uc5b4\s*\ubaa8\ub378|\uc5b4\uc2dc\uc2a4\ud134\ud2b8|\ub3c4\uc6b0\ubbf8|\uc5d0\uc774\uc804\ud2b8|\b(?:assistant(?:e)?|agent|mod\u00e8le|intelligence\s+artificielle|asistente|modelo|inteligencia\s+artificial|assistent(?:in)?|sprachmodell|ki|k\u00fcnstliche\s+intelligenz|assistente|modello|intelligenza\s+artificiale|intelig\u00eancia\s+artificial|ia)\b|\u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043d\u0442|\u043f\u043e\u043c\u043e\u0449\u043d\u0438\u043a|\u044f\u0437\u044b\u043a\u043e\u0432(?:\u0430\u044f|\u043e\u0439|\u0443\u044e)\s+\u043c\u043e\u0434\u0435\u043b(?:\u044c|\u044c\u044e|\u0438)|\u0438\u0441\u043a\u0443\u0441\u0441\u0442\u0432\u0435\u043d\u043d(?:\u044b\u0439|\u044b\u043c|\u043e\u0433\u043e)\s+\u0438\u043d\u0442\u0435\u043b\u043b\u0435\u043a\u0442|\u0645\u0633\u0627\u0639\u062f|\u0646\u0645\u0648\u0630\u062c\s+\u0644\u063a\u0648\u064a|\u0630\u0643\u0627\u0621\s+\u0627\u0635\u0637\u0646\u0627\u0639\u064a|\u090f\u0906\u0908|\u0938\u0939\u093e\u092f\u0915|\u092d\u093e\u0937\u093e\s+\u092e\u0949\u0921\u0932|\u0915\u0943\u0924\u094d\u0930\u093f\u092e\s+\u092c\u0941\u0926\u094d\u0927\u093f\u092e\u0924\u094d\u0924\u093e/iu;
+const HOST_IDENTITY_NAMES = /\b(?:claude(?:[\s_-]*code)?|anthropic|z[\s._-]*code|zhipu(?:[\s._-]*ai)?|z[\s._-]*ai|glm(?:[\s._-]*\d[\w.-]*)?|chat[\s_-]*gpt|open[\s_-]*ai|codex|gpt(?:[\s._-]*\d[\w.-]*)?|deep[\s_-]*seek|qwen|qoder|tongyi|kimi|moonshot|doubao|minimax|gemini|gemma|grok|x[\s._-]*ai|llama|meta[\s_-]*ai|mistral|mixtral|codestral|cohere|baichuan|ernie|hunyuan|stepfun)\b|\u667a\u8c31|\u667a\u8b5c|\u901a\u4e49|\u901a\u7fa9|\u5343\u95ee|\u5343\u554f|\u6708\u4e4b\u6697\u9762|\u8c46\u5305|\u5b57\u8282\u8df3\u52a8|\u5b57\u7bc0\u8df3\u52d5|\u767e\u5ddd|\u6587\u5fc3|\u6df7\u5143|\u9636\u8dc3\u661f\u8fb0|\u968e\u8e8d\u661f\u8fb0|\u514b\u52b3\u5fb7|\u514b\u52de\u5fb7|\u30af\u30ed\u30fc\u30c9|\u30a2\u30f3\u30bd\u30ed\u30d4\u30c3\u30af|\ud074\ub85c\ub4dc|\uc564\ud2b8\ub85c\ud53d|\u043a\u043b\u043e\u0434|\u0430\u043d\u0442\u0440\u043e\u043f\u0438\u043a|\u0643\u0644\u0648\u062f|\u0623\u0646\u062b\u0631\u0648\u0628\u064a\u0643|\u0627\u0646\u062b\u0631\u0648\u0628\u064a\u0643|\u0915\u094d\u0932\u0949\u0921|\u090f\u0902\u0925\u094d\u0930\u094b\u092a\u093f\u0915/iu;
+const HOST_IDENTITY_ROLES = /\b(?:ai|llm|assistant|agent|chatbot|tool|language\s+model|artificial\s+intelligence)\b|\u4eba\u5de5\u667a\u80fd|\u4eba\u5de5\u667a\u6167|(?:\u5927(?:\u578b)?(?:\u8bed\u8a00|\u8a9e\u8a00)|\u8bed\u8a00|\u8a9e\u8a00)\u6a21\u578b|\u5927\u6a21\u578b|(?:\u7f16\u7a0b|\u7de8\u7a0b|\u7f16\u7801|\u7de8\u78bc|\u667a\u80fd)?(?:\u52a9\u624b|\u52a9\u7406|\u4ee3\u7406)|\u667a\u80fd\u4f53|\u667a\u80fd\u9ad4|\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8|\u4eba\u5de5\u77e5\u80fd|\u8a00\u8a9e\u30e2\u30c7\u30eb|\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8|\uc778\uacf5\s*\uc9c0\ub2a5|\uc5b8\uc5b4\s*\ubaa8\ub378|\uc5b4\uc2dc\uc2a4\ud134\ud2b8|\ub3c4\uc6b0\ubbf8|\uc5d0\uc774\uc804\ud2b8|\b(?:assistant(?:e)?|agent|mod\u00e8le|intelligence\s+artificielle|asistente|modelo|inteligencia\s+artificial|assistent(?:in)?|sprachmodell|ki|k\u00fcnstliche\s+intelligenz|assistente|modello|intelligenza\s+artificiale|intelig\u00eancia\s+artificial|ia)\b|\u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043d\u0442|\u043f\u043e\u043c\u043e\u0449\u043d\u0438\u043a|\u044f\u0437\u044b\u043a\u043e\u0432(?:\u0430\u044f|\u043e\u0439|\u0443\u044e)\s+\u043c\u043e\u0434\u0435\u043b(?:\u044c|\u044c\u044e|\u0438)|\u0438\u0441\u043a\u0443\u0441\u0441\u0442\u0432\u0435\u043d\u043d(?:\u044b\u0439|\u044b\u043c|\u043e\u0433\u043e)\s+\u0438\u043d\u0442\u0435\u043b\u043b\u0435\u043a\u0442|\u0645\u0633\u0627\u0639\u062f|\u0646\u0645\u0648\u0630\u062c\s+\u0644\u063a\u0648\u064a|\u0630\u0643\u0627\u0621\s+\u0627\u0635\u0637\u0646\u0627\u0639\u064a|\u090f\u0906\u0908|\u0938\u0939\u093e\u092f\u0915|\u092d\u093e\u0937\u093e\s+\u092e\u0949\u0921\u0932|\u0915\u0943\u0924\u094d\u0930\u093f\u092e\s+\u092c\u0941\u0926\u094d\u0927\u093f\u092e\u0924\u094d\u0924\u093e/iu;
+const HOST_IDENTITY_SELF = /\b(?:i\s+am|i'm|we\s+are|we're)\b|\b(?:you\s+are|you're)\s+(?!(?:required|expected|allowed|asked|given|provided|using|working|running|editing|executing|reading|writing|helping|assisting|responsible|able|not|now|currently|to)\b)|(?:\u6211|\u6211\u4eec|\u6211\u5011|\u4f60|\u60a8|\u672c\u52a9\u624b|\u672c\u6a21\u578b|\u672c\u7cfb\u7edf|\u672c\u7cfb\u7d71)\s*(?:\u5c31\u662f|\u662f|\u53eb|\u540d\u4e3a|\u540d\u70ba|\u81ea\u79f0|\u81ea\u7a31)/iu;
 const HOST_IDENTITY_DECLARATION = new RegExp('(?:' + [
   /\b(?:you\s+are|you're|i\s+am|i'm|we\s+are|we're|this\s+is|(?:this\s+|the\s+)?(?:assistant|model|agent|system)\s+is|as)\s+(?:(?:an?|the|helpful|intelligent|advanced|large|coding|interactive|conversational|cli|ai)\s+)*/,
   /(?:\u4f60|\u60a8|\u6211|\u6211\u4eec|\u6211\u5011|\u672c(?:\u52a9\u624b|\u6a21\u578b|\u7cfb\u7edf|\u7cfb\u7d71)|\u6b64(?:\u52a9\u624b|\u6a21\u578b|\u7cfb\u7edf|\u7cfb\u7d71)|\u52a9\u624b|\u6a21\u578b)\s*(?:\u662f|\u4e3a|\u70ba|\u53eb|\u540d\u4e3a|\u540d\u70ba)\s*(?:(?:\u4e00[\u4e2a\u500b\u540d\u4f4d]|\u6709\u7528\u7684|\u667a\u80fd\u7684)\s*)*|(?:\u4f5c\u4e3a|\u4f5c\u70ba)\s*(?:\u4e00[\u4e2a\u500b\u540d\u4f4d]\s*)?/,
@@ -1818,7 +1819,9 @@ const HOST_IDENTITY_DECLARATION = new RegExp('(?:' + [
 
 const HOST_IDENTITY_LABEL = new RegExp([
   /\b(?:(?:my|your|our)\s+name\s+is|call\s+me)\b|\b(?:assistant|model|agent|system)\s+(?:name|identity|id)\s*[:=]/,
+  /\b(?:identity|persona|name|role|whoami|version|model|assistant|agent|provider|vendor|developer|creator|training[\s_-]*(?:provider|organization|data|date|cutoff)|knowledge[\s_-]*cutoff)[\s_-]*(?:(?:name|identity|id|version|family|provider|vendor)[\s_-]*)?["']?\s*[:=]/,
   /(?:\u6211|\u4f60|\u60a8|\u52a9\u624b|\u6a21\u578b|\u7cfb\u7edf|\u7cfb\u7d71)\u7684?(?:\u540d\u5b57|\u540d\u79f0|\u540d\u7a31|\u8eab\u4efd|\u540d)\s*(?:\u662f|\u4e3a|\u70ba|[:=\uff1a])/,
+  /(?:\u8eab\u4efd|\u89d2\u8272|\u81ea\u6211\u4ecb\u7ecd|\u81ea\u6211\u4ecb\u7d39|\u6a21\u578b(?:\u540d\u79f0|\u540d\u7a31|\u540d|\u7f16\u53f7|\u7de8\u865f|\u7248\u672c|\u7cfb\u5217|\u63d0\u4f9b\u5546)?|\u8bad\u7ec3\u65b9|\u8a13\u7df4\u65b9|\u5f00\u53d1\u5546|\u958b\u767c\u5546|\u5f00\u53d1\u8005|\u958b\u767c\u8005|\u5382\u5546|\u5ee0\u5546|\u63d0\u4f9b\u5546|\u4f9b\u5e94\u5546|\u4f9b\u61c9\u5546|\u5f53\u524d\u7248\u672c|\u7576\u524d\u7248\u672c|\u77e5\u8bc6\u622a\u6b62(?:\u65e5\u671f|\u65f6\u95f4)?|\u77e5\u8b58\u622a\u6b62(?:\u65e5\u671f|\u6642\u9593)?)["']?\s*[:=\uff1a]/,
   /(?:\u79c1|\u3042\u306a\u305f)\u306e\u540d\u524d\u306f|(?:\u30a2\u30b7\u30b9\u30bf\u30f3\u30c8\u540d|\u30e2\u30c7\u30eb\u540d)\s*[:=]|(?:\uc81c|\ub0b4|\ub2f9\uc2e0\uc758)\s*\uc774\ub984\uc740|(?:\uc5b4\uc2dc\uc2a4\ud134\ud2b8|\ubaa8\ub378)\s*(?:\uc774\ub984|\uba85)\s*[:=]/,
   /\b(?:je\s+m'appelle|tu\s+t'appelles|mein\s+name\s+ist|dein\s+name\s+ist|me\s+llamo|te\s+llamas|meu\s+nome\s+\u00e9|seu\s+nome\s+\u00e9|mi\s+chiamo|il\s+tuo\s+nome\s+\u00e8)(?![\p{L}\p{N}])/,
   /\b(?:nom\s+(?:de\s+l'assistant|du\s+mod\u00e8le)|(?:assistenten|modell)(?:name|identit\u00e4t)|nombre\s+del\s+(?:asistente|modelo)|nome\s+(?:do|del)\s+(?:assistente|modelo|modello))\s*[:=]/,
@@ -1827,8 +1830,10 @@ const HOST_IDENTITY_LABEL = new RegExp([
 ].map(pattern => pattern.source).join('|'), 'iu');
 const HOST_IDENTITY_ATTRIBUTION = /\b(?:by|from|built|made|developed|created|trained|provided|official|copyright|trademark)\b|\u00a9|\(c\)|\u5f00\u53d1|\u958b\u767c|\u63d0\u4f9b|\u6784\u5efa|\u69cb\u5efa|\u6253\u9020|\u51fa\u54c1|\u8bad\u7ec3|\u8a13\u7df4|\u7248\u6743|\u7248\u6b0a|\u5546\u6807|\u5546\u6a19|\u958b\u767a|\u4f5c\u6210|\u8a13\u7df4|\u516c\u5f0f|\u8457\u4f5c\u6a29|\uac1c\ubc1c|\uc81c\uacf5|\ud6c8\ub828|\uacf5\uc2dd|\uc800\uc791\uad8c|\b(?:d\u00e9velopp\u00e9|cr\u00e9\u00e9|entra\u00een\u00e9|fourni|officiel|entwickelt|erstellt|trainiert|bereitgestellt|offiziell|desarrollado|creado|entrenado|proporcionado|oficial|desenvolvido|criado|treinado|fornecido|sviluppato|creato|addestrato|fornito|ufficiale)\b|\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0430\u043d|\u0441\u043e\u0437\u0434\u0430\u043d|\u043e\u0431\u0443\u0447\u0435\u043d|\u043f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d|\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d|\u0430\u0432\u0442\u043e\u0440\u0441\u043a|\u062a\u0637\u0648\u064a\u0631|\u0637\u0648\u0631\u062a\u0647|\u0625\u0646\u0634\u0627\u0621|\u062a\u062f\u0631\u064a\u0628|\u0631\u0633\u0645\u064a|\u062d\u0642\u0648\u0642|\u0935\u093f\u0915\u0938\u093f\u0924|\u0928\u093f\u0930\u094d\u092e\u093f\u0924|\u092a\u094d\u0930\u0936\u093f\u0915\u094d\u0937\u093f\u0924|\u0906\u0927\u093f\u0915\u093e\u0930\u093f\u0915/iu;
 const HOST_IDENTITY_METADATA = /\bmy\s+(?:capabilities|training|knowledge\s+cutoff|training\s+data|limitations)\b|\b(?:i\s+am|i'm)\s+here\s+to\s+(?:help|assist)\b|\u6211\u7684(?:\u80fd\u529b|\u8bad\u7ec3|\u8a13\u7df4|\u77e5\u8bc6\u622a\u6b62|\u77e5\u8b58\u622a\u6b62|\u5c40\u9650)|\u6211\u5728\u8fd9\u91cc(?:\u4e3a\u4f60)?(?:\u63d0\u4f9b\u5e2e\u52a9|\u534f\u52a9|\u5e2e\u5fd9)|\u79c1\u306e(?:\u80fd\u529b|\u8a13\u7df4|\u77e5\u8b58|\u5236\u9650)|\uc81c\s*(?:\ub2a5\ub825|\ud559\uc2b5|\uc9c0\uc2dd|\ud55c\uacc4)|\b(?:mes\s+(?:capacit\u00e9s|limites)|meine\s+(?:f\u00e4higkeiten|grenzen)|mis\s+(?:capacidades|limitaciones)|minhas\s+(?:capacidades|limita\u00e7\u00f5es)|le\s+mie\s+(?:capacit\u00e0|limitazioni))\b|\u043c\u043e\u0438\s+(?:\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0441\u0442\u0438|\u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u044f)|(?:\u0642\u062f\u0631\u0627\u062a\u064a|\u062a\u062f\u0631\u064a\u0628\u064a|\u062d\u062f\u0648\u062f\u064a)|\u092e\u0947\u0930\u0940\s+(?:\u0915\u094d\u0937\u092e\u0924\u093e\u090f\u0902|\u0915\u094d\u0937\u092e\u0924\u093e\u090f\u0901|\u0938\u0940\u092e\u093e\u090f\u0902|\u0938\u0940\u092e\u093e\u090f\u0901)/iu;
+const HOST_IDENTITY_PROVENANCE = /\b(?:powered|driven|backed)\s+by\b|\b(?:trained|developed|created|built|made|provided)\s+(?:by|at)\b|\b(?:underlying|base|foundation|backend|current|actual)\s+(?:language\s+)?model\b|\b(?:model\s+(?:identity|name|version|family)|knowledge[\s_-]*cutoff|training[\s_-]*(?:data|cutoff))\b|(?:\u7531|\u6765\u81ea|\u4f86\u81ea)[^\n\u3002\uff01\uff1f]{0,120}(?:\u8bad\u7ec3|\u8a13\u7df4|\u5f00\u53d1|\u958b\u767c|\u6253\u9020|\u9a71\u52a8|\u9a45\u52d5)|(?:\u57fa\u4e8e|\u57fa\u65bc)[^\n\u3002\uff01\uff1f]{0,120}(?:\u6a21\u578b|\bllm\b|\bai\b)|(?:\u5e95\u5c42|\u5e95\u5c64|\u57fa\u7840|\u57fa\u790e|\u540e\u7aef|\u5f8c\u7aef|\u5f53\u524d|\u7576\u524d|\u5b9e\u9645|\u5be6\u969b)(?:\u4f7f\u7528\u7684?|\u91c7\u7528\u7684?|\u63a1\u7528\u7684?)?(?:\u5927(?:\u8bed\u8a00|\u8a9e\u8a00)?)?\u6a21\u578b|\u77e5\u8bc6\u622a\u6b62|\u77e5\u8b58\u622a\u6b62/iu;
+const HOST_IDENTITY_HEADER = /^[\s#>*"'`\[\](\uff08<]*(?:(?:assistant|agent|model|system)\s+)?(?:identity(?:\s+(?:and|&)\s+role)?|persona|self[\s-]*introduction|model[\s-]*(?:information|details)|about\s+(?:you|me|the\s+(?:assistant|model))|\u8eab\u4efd(?:\u4fe1\u606f|\u8bbe\u5b9a|\u8a2d\u5b9a)?|\u89d2\u8272(?:\u4fe1\u606f|\u8bbe\u5b9a|\u8a2d\u5b9a)?|\u81ea\u6211\u4ecb\u7ecd|\u81ea\u6211\u4ecb\u7d39|\u6a21\u578b(?:\u4fe1\u606f|\u8cc7\u8a0a|\u8bf4\u660e|\u8aaa\u660e))[\s:\uff1a>*"'`\[\])\uff09>]*$/iu;
 const HOST_IDENTITY_ROLE_SUFFIX = new RegExp('(?:' + HOST_IDENTITY_NAMES.source + '|' + HOST_IDENTITY_ROLES.source + ')\\s*(?:\u3067\u3059|\u3067\u3042\u308b|\u3068\u3057\u3066|\uc785\ub2c8\ub2e4|\uc774\uc5d0\uc694|\uc608\uc694|\ub85c\uc11c|\uc73c\ub85c\uc11c|\u0939\u0942\u0901|\u0939\u0948)', 'iu');
-const HOST_IDENTITY_BARE = new RegExp('^[\\s#>*_"\'`(]*(?:' + HOST_IDENTITY_NAMES.source + ')(?:[\\s\\d._:()\u00a9\u00ae\u2122-]|sonnet|opus|haiku|code|assistant)*[.!?\u3002\uff01\uff1f]*$', 'iu');
+const HOST_IDENTITY_BARE = new RegExp('^[\\s#>*_"\'`(]*(?:' + HOST_IDENTITY_NAMES.source + ')[\\p{L}\\p{N}\\s._:/()\u00a9\u00ae\u2122+\u2014\u2013-]*[.!?\u3002\uff01\uff1f]*$', 'iu');
 
 function normalizeIdentityText(text) {
   return text.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/[\u2018\u2019\u02bc]/g, "'").replace(/[*_`~]/g, '')
@@ -1883,7 +1888,7 @@ function scrubInjectCopies(sections, matchers) {
   let changed = false;
   const kept = [];
   for (const section of sections) {
-    if (typeof section !== 'string') { kept.push(section); continue; }
+    if (typeof section !== 'string' || isCustomSection(section)) { kept.push(section); continue; }
     let text = section;
     for (const { needle, loose } of matchers) {
       for (;;) {
@@ -1912,28 +1917,33 @@ const isMemorySection = section => {
 
 function filterPromptSection(section, markers = []) {
   if (typeof section !== 'string') return section;
-  const lines = section.split('\n');
+  if (HOST_IDENTITY_HEADER.test(normalizeIdentityText(section.trimStart().split('\n', 1)[0]))) return '';
   const kept = [];
   let changed = false;
-  for (const line of lines) {
-    // Decimal points remain inside sentences; CJK and RTL punctuation can end them.
-    const sentences = line.split(/(?<=[\u3002\uff61\uff01\uff1f\uff1b\u061b;\u061f\u06d4\u0964\u0965])|(?<=[.\uff0e\ufe52!?])(?=\s|$)/u);
-    const rest = [];
-    for (const sentence of sentences) {
-      const text = normalizeIdentityText(sentence);
-      const drop = sentenceDropped(text) ||
-        HOST_IDENTITY_DECLARATION.test(text) || HOST_IDENTITY_LABEL.test(text) ||
-        HOST_IDENTITY_METADATA.test(text) || HOST_IDENTITY_ROLE_SUFFIX.test(text) ||
-        HOST_IDENTITY_BARE.test(text) ||
-        (HOST_IDENTITY_NAMES.test(text) && HOST_IDENTITY_ATTRIBUTION.test(text)) ||
-        markers.some(marker => text.includes(marker));
-      if (drop) { changed = true; continue; }
-      rest.push(sentence);
+  for (const paragraph of section.split(/\r?\n[ \t]*\r?\n/u)) {
+    const text = normalizeIdentityText(paragraph);
+    const drop = HOST_IDENTITY_SELF.test(text) || HOST_IDENTITY_DECLARATION.test(text) ||
+      HOST_IDENTITY_LABEL.test(text) || HOST_IDENTITY_METADATA.test(text) ||
+      HOST_IDENTITY_PROVENANCE.test(text) || HOST_IDENTITY_ROLE_SUFFIX.test(text) ||
+      HOST_IDENTITY_BARE.test(text) ||
+      (HOST_IDENTITY_NAMES.test(text) &&
+        (HOST_IDENTITY_ATTRIBUTION.test(text) || HOST_IDENTITY_ROLES.test(text))) ||
+      markers.some(marker => text.includes(marker));
+    if (drop) { changed = true; continue; }
+    const lines = [];
+    for (const line of paragraph.split('\n')) {
+      // Decimal points remain inside sentences; CJK and RTL punctuation can end them.
+      const sentences = line.split(/(?<=[\u3002\uff61\uff01\uff1f\uff1b\u061b;\u061f\u06d4\u0964\u0965])|(?<=[.\uff0e\ufe52!?])(?=\s|$)/u);
+      lines.push(sentences.filter(sentence => {
+        if (!sentenceDropped(normalizeIdentityText(sentence))) return true;
+        changed = true;
+        return false;
+      }).join(''));
     }
-    kept.push(rest.join(''));
+    kept.push(lines.join('\n'));
   }
   if (!changed) return section;
-  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return kept.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function rewritePromptAssembly(sections, options) {
@@ -1942,7 +1952,6 @@ function rewritePromptAssembly(sections, options) {
   }
   if (!Array.isArray(sections)) return sections;
   try {
-    if (isCustomSection(sections[0])) return sections;
     const cfg = assemblyConfig(options);
     const hasCustom = cfg.customPrompt.length > 0;
     let changed = false;
@@ -1954,7 +1963,11 @@ function rewritePromptAssembly(sections, options) {
     const out = [];
     for (const original of pool) {
       let section = original;
-      if (isCustomSection(section)) { changed = true; continue; }
+      if (isCustomSection(section)) {
+        if (hasCustom) changed = true;
+        else out.push(section);
+        continue;
+      }
       if (cfg.stripMemory && isMemorySection(section)) { changed = true; continue; }
       if (typeof section === 'string') {
         const stripped = filterPromptSection(section, cfg.identityMarkers);
@@ -9680,12 +9693,12 @@ export function applyAstEdits(code, edits) {
 '@ | Set-Content (Join-Path $ClawDir "ast-patches.mjs") -Encoding UTF8
 @'
 import {
-  parsePatchSource, PENTEST_AST_PATCH_IDS,
+  PENTEST_AST_PATCH_IDS,
   scanPermissionBypasses, scanCombinerWrap, scanPromptTextErase,
   scanWarningSuppression, scanRuntimeGates,
 } from './pentest-scanners.mjs';
 import { scanRuntimeTrimming } from './pentest-trimming.mjs';
-import { hasPatchAnchors } from './ast-patches.mjs';
+import { hasPatchAnchors, parsePatchSource } from './ast-patches.mjs';
 import {
   removedPromptPrefixes, denialGuidancePrefixes, injectionWarning,
   removalGuidance, unavailableReviewWarning, reportWarningReference,
@@ -9697,7 +9710,6 @@ export { pruneRuntimeGraph } from './pentest-pruner.mjs';
 export const PENTEST_REQUIRED = new Set([
   'pentest-prompt-assembly',
 ]);
-// An anchor matches only when all its tokens are present.
 export const PENTEST_ANCHORS = [
   ['classifierOnly'],
   ['denied before call'],
@@ -9723,7 +9735,6 @@ export const PENTEST_ANCHORS = [
   ['web-reading specialist', 'Claude Code'],
   ['bundledSkillsInitialized'], ['builtinPluginsInitialized'],
   ['getAllBaseTools'], ['assembleToolPool'],
-  ['CLAUDE_CODE_DISABLE_CRON'],
   ['clawgod:runtime-table-probe'],
   ['inputSchema'],
   ['disableRemoteControl'], ['remote_control_at_startup'], ['voice_init_gate'],
@@ -9786,7 +9797,7 @@ export function scanPentestPatches(code, upstreamRanges = [], readTree = () => p
 '@ | Set-Content (Join-Path $ClawDir "pentest-patches.mjs") -Encoding UTF8
 
 @'
-import { AST_HELPERS, parsePatchSource, createPatchContext, walk } from './ast-patches.mjs';
+import { AST_HELPERS, createPatchContext, walk } from './ast-patches.mjs';
 import {
   removedPromptPrefixes, denialGuidancePrefixes, removalGuidance,
   injectionWarning, unavailableReviewWarning, reportWarningReference,
@@ -9848,7 +9859,7 @@ const PENTEST_AST_PATCH_IDS = [
   'permission-modes-delete', 'permission-deny-rules-off', 'permission-disallowed-tools-off',
   'security-managed-settings-off',
   'security-bundled-skills', 'security-builtin-plugins', 'security-tool-startup',
-  'security-cron-off', 'security-remote-control-off', 'security-voice-off',
+  'security-remote-control-off', 'security-voice-off',
   'security-brief-off', 'security-cowork-off', 'security-output-styles-off',
   'security-update-off', 'security-telemetry-off', 'security-checkpoint-off',
   'runtime-table-probe',
@@ -9873,10 +9884,9 @@ const PENTEST_AST_META = {
   'permission-deny-rules-off': 'Empty alwaysDenyRules/alwaysAskRules so settings-level deny rules cannot block tools',
   'permission-disallowed-tools-off': 'Ignore the disallowedTools setting so no tool can be hidden by name',
   'security-managed-settings-off': 'Disable the local managed-settings policy file (enterprise rules, allowed models, minimum version)',
-  'security-bundled-skills': 'Keep code-review as the bundled skill initializer',
+  'security-bundled-skills': 'Keep code-review and loop as the bundled skill initializers',
   'security-builtin-plugins': 'Block optional built-in plugin factories',
-  'security-tool-startup': 'Block optional tool loading (Cron/RemoteTrigger/Push/Design/Projects/Artifact/Appifact)',
-  'security-cron-off': 'Disable cron scheduling',
+  'security-tool-startup': 'Block optional tool loading (RemoteTrigger/Push/Design/Projects/Artifact/Appifact)',
   'security-remote-control-off': 'Disable Remote Control',
   'security-voice-off': 'Disable voice mode',
   'security-brief-off': 'Disable Brief mode',
@@ -10561,14 +10571,16 @@ function scanRuntimeGates(tree, code, results, edit, upstreamRanges = []) {
 export {
   PENTEST_AST_PATCH_IDS,
   PENTEST_AST_META,
-  parsePatchSource, walk, contains, longContentReturn,
-  literal, propertyName, member, boolean, staticText,
+  contains, longContentReturn,
   scanPermissionBypasses, scanCombinerWrap, scanPromptTextErase,
   scanWarningSuppression, scanRuntimeGates,
 };
 '@ | Set-Content (Join-Path $ClawDir "pentest-scanners.mjs") -Encoding UTF8
 @'
-import { walk, contains, longContentReturn, literal, propertyName, member, boolean, staticText, PENTEST_AST_PATCH_IDS } from './pentest-scanners.mjs';
+import { AST_HELPERS, walk } from './ast-patches.mjs';
+import { contains, longContentReturn, PENTEST_AST_PATCH_IDS } from './pentest-scanners.mjs';
+
+const { literal, propertyName, member, boolean, staticText } = AST_HELPERS;
 
 const REMOVE_COMMANDS = new Set(['update', 'upgrade', 'release-notes', 'privacy-settings',
   'feedback', 'bug', 'statusline', 'doctor', 'cost', 'usage', 'vim', 'ide',
@@ -10841,8 +10853,13 @@ function scanRuntimeTrimming(tree, code, results, edit) {
           member(node.left, 'CLAUDE_CODE_ENTRYPOINT') && literal(node.right, 'local-agent')) localAgent = node;
     });
     if (!declaration || !assigned || reviews.length !== 1 || !localAgent) continue;
+    const loop = fn.body.body.filter(node => node.type === 'VariableDeclaration')
+      .flatMap(node => node.declarations).find(node => node.id.type === 'ObjectPattern' &&
+        node.id.properties.some(property => propertyName(property) === 'registerLoopSkill') && requireCall(node.init));
+    const registerLoop = loop ? `${source(loop.init)}.registerLoopSkill();` +
+      `${state}.bundledSkillKillSwitchSurvivors.add(${state}.bundledSkills.find(skill=>skill.name==="loop"));` : '';
     replaceBody(id, fn, `let ${state}=${source(declaration.init)};${source(guard)}` +
-      `${state}.bundledSkillsInitialized=!0;if(${source(localAgent)})return;${reviews[0].id.name}();`);
+      `${state}.bundledSkillsInitialized=!0;if(${source(localAgent)})return;${reviews[0].id.name}();${registerLoop}`);
   }
 
   const removedPlugins = new Set(['cc-plugin-plugin-authoring', 'cc-plugin-mods-guide',
@@ -10864,8 +10881,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
     });
   }
 
-  const toolExports = new Set(['CronCreateTool', 'CronDeleteTool', 'CronListTool',
-    'RemoteTriggerTool', 'PushNotificationTool', 'DesignSyncTool', 'DesignTool',
+  const toolExports = new Set(['RemoteTriggerTool', 'PushNotificationTool', 'DesignSyncTool', 'DesignTool',
     'ProjectsTool', 'ARTIFACT_TOOL_HEAD', 'ArtifactTool', 'ARTIFACT_ADDON_TOOLS',
     'AppifactReplTool',
     'NotebookEditTool']);
@@ -10946,12 +10962,6 @@ function scanRuntimeTrimming(tree, code, results, edit) {
   for (const fn of functions.values()) {
     if (!noArgs(fn)) continue;
     const value = returned(fn);
-    if (value?.type === 'LogicalExpression' && value.operator === '&&' &&
-        value.left.type === 'UnaryExpression' && value.left.operator === '!' &&
-        member(value.left.argument, 'CLAUDE_CODE_DISABLE_CRON') &&
-        value.right.type === 'CallExpression' && literal(value.right.arguments[0], 'tengu_kairos_cron')) {
-      replaceBody('security-cron-off', fn, 'return!1;');
-    }
     const left = unchain(value?.left);
     if (value?.type === 'BinaryExpression' && value.operator === '===' &&
         member(left, 'disableRemoteControl') && member(left.object, 'settings') && boolean(value.right, true)) {
@@ -10978,7 +10988,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
           parent?.type === 'VariableDeclarator' && parent.id.type === 'Identifier') {
         voiceBindings.add(node.callee.object.name);
         let scope = parents.get(parent);
-        while (scope && !['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(scope.type)) scope = parents.get(scope);
+        while (scope && !functionNode(scope)) scope = parents.get(scope);
         voiceResults.set(parent.id.name, scope);
         replace('security-voice-off', node, 'void 0');
       }
@@ -10988,7 +10998,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
           voiceResults.has(node.object.name) &&
           ['state', 'handleKeyEvent', 'cancelRecording'].some(name => member(node, name))) {
         let scope = parents.get(node);
-        while (scope && !['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(scope.type)) scope = parents.get(scope);
+        while (scope && !functionNode(scope)) scope = parents.get(scope);
         if (scope === voiceResults.get(node.object.name)) {
           replace('security-voice-off', node, member(node, 'state') ? '"idle"' : 'void 0');
         }
@@ -11063,7 +11073,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
       }
     }
     walk(node.body, value => {
-      if (value !== node.body && ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(value.type)) return false;
+      if (value !== node.body && functionNode(value)) return false;
       if (value.type !== 'IfStatement' || value.consequent.type !== 'ReturnStatement' ||
           value.consequent.argument != null) return;
       walk(value.test, guard => {
@@ -11431,9 +11441,9 @@ export {
 };
 '@ | Set-Content (Join-Path $ClawDir "pentest-policy-text.mjs") -Encoding UTF8
 @'
-import {
-  parsePatchSource, walk, propertyName, member, staticText,
-} from './pentest-scanners.mjs';
+import { AST_HELPERS, parsePatchSource, walk } from './ast-patches.mjs';
+
+const { propertyName, member, staticText } = AST_HELPERS;
 
 const KILLED_FEATURE_ANCHORS = [
   'Toggle voice mode', 'voice_init_gate',
@@ -11897,7 +11907,7 @@ function applyPruneEdits(code, edits) {
 @'
 
 const DENY = ["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","EnterPlanMode","ExitPlanMode","Projects"];
-const REMOVED_TOOLS = ["CronCreate","CronDelete","CronList"];
+const LOOP_TOOLS = ["CronCreate","CronDelete","CronList","ScheduleWakeup"];
 const FLAGS = ["disableWorkflows","disableClaudeAiConnectors","disableArtifact","disableBundledSkills","disableRemoteControl"];
 const SETTINGS = {
   sandbox: { enabled: false, autoAllowBashIfSandboxed: false, failIfUnavailable: false },
@@ -11915,7 +11925,7 @@ const SETTINGS = {
     CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING: '1',
   },
 };
-const LEGACY_SHARED_DENY = [...DENY, ...REMOVED_TOOLS, "ScheduleWakeup", "ReportFindings"];
+const LEGACY_SHARED_DENY = [...DENY, ...LOOP_TOOLS, "ReportFindings"];
 
 const FEATURES_LOCKED_ON = {
   'agent-teams': true,
@@ -11943,6 +11953,8 @@ function leanApply(clawgodSettingsPath, sharedSettingsPath, patchesJsonPath) {
   for (const [k, v] of Object.entries(SETTINGS)) {
     if (JSON.stringify(s[k]) !== JSON.stringify(v)) { s[k] = v; changed = true; }
   }
+  const kept = s.permissions.deny.filter(t => !LOOP_TOOLS.includes(t));
+  if (kept.length !== s.permissions.deny.length) { s.permissions.deny = kept; changed = true; }
   const ex = new Set(s.permissions.deny);
   for (const t of DENY) { if (!ex.has(t)) { s.permissions.deny.push(t); changed = true; } }
   if (changed) {

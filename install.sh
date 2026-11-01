@@ -1727,8 +1727,9 @@ function sentenceDropped(sentence) {
 
 const CUSTOM_PROMPT_MARK = 'clawgod:custom-prompt';
 
-const HOST_IDENTITY_NAMES = /claude(?:[\s_-]*code)?|anthropic|克劳德|克勞德|クロード|アンソロピック|클로드|앤트로픽|клод|антропик|كلود|أنثروبيك|انثروبيك|क्लॉड|एंथ्रोपिक/iu;
-const HOST_IDENTITY_ROLES = /\b(?:ai|llm|assistant|agent|chatbot|tool|language\s+model|artificial\s+intelligence)\b|人工智能|人工智慧|(?:大(?:型)?(?:语言|語言)|语言|語言)模型|(?:编程|編程|编码|編碼|智能)?助手|アシスタント|人工知能|言語モデル|エージェント|인공\s*지능|언어\s*모델|어시스턴트|도우미|에이전트|\b(?:assistant(?:e)?|agent|modèle|intelligence\s+artificielle|asistente|modelo|inteligencia\s+artificial|assistent(?:in)?|sprachmodell|ki|künstliche\s+intelligenz|assistente|modello|intelligenza\s+artificiale|inteligência\s+artificial|ia)\b|ассистент|помощник|языков(?:ая|ой|ую)\s+модел(?:ь|ью|и)|искусственн(?:ый|ым|ого)\s+интеллект|مساعد|نموذج\s+لغوي|ذكاء\s+اصطناعي|एआई|सहायक|भाषा\s+मॉडल|कृत्रिम\s+बुद्धिमत्ता/iu;
+const HOST_IDENTITY_NAMES = /\b(?:claude(?:[\s_-]*code)?|anthropic|z[\s._-]*code|zhipu(?:[\s._-]*ai)?|z[\s._-]*ai|glm(?:[\s._-]*\d[\w.-]*)?|chat[\s_-]*gpt|open[\s_-]*ai|codex|gpt(?:[\s._-]*\d[\w.-]*)?|deep[\s_-]*seek|qwen|qoder|tongyi|kimi|moonshot|doubao|minimax|gemini|gemma|grok|x[\s._-]*ai|llama|meta[\s_-]*ai|mistral|mixtral|codestral|cohere|baichuan|ernie|hunyuan|stepfun)\b|智谱|智譜|通义|通義|千问|千問|月之暗面|豆包|字节跳动|字節跳動|百川|文心|混元|阶跃星辰|階躍星辰|克劳德|克勞德|クロード|アンソロピック|클로드|앤트로픽|клод|антропик|كلود|أنثروبيك|انثروبيك|क्लॉड|एंथ्रोपिक/iu;
+const HOST_IDENTITY_ROLES = /\b(?:ai|llm|assistant|agent|chatbot|tool|language\s+model|artificial\s+intelligence)\b|人工智能|人工智慧|(?:大(?:型)?(?:语言|語言)|语言|語言)模型|大模型|(?:编程|編程|编码|編碼|智能)?(?:助手|助理|代理)|智能体|智能體|アシスタント|人工知能|言語モデル|エージェント|인공\s*지능|언어\s*모델|어시스턴트|도우미|에이전트|\b(?:assistant(?:e)?|agent|modèle|intelligence\s+artificielle|asistente|modelo|inteligencia\s+artificial|assistent(?:in)?|sprachmodell|ki|künstliche\s+intelligenz|assistente|modello|intelligenza\s+artificiale|inteligência\s+artificial|ia)\b|ассистент|помощник|языков(?:ая|ой|ую)\s+модел(?:ь|ью|и)|искусственн(?:ый|ым|ого)\s+интеллект|مساعد|نموذج\s+لغوي|ذكاء\s+اصطناعي|एआई|सहायक|भाषा\s+मॉडल|कृत्रिम\s+बुद्धिमत्ता/iu;
+const HOST_IDENTITY_SELF = /\b(?:i\s+am|i'm|we\s+are|we're)\b|\b(?:you\s+are|you're)\s+(?!(?:required|expected|allowed|asked|given|provided|using|working|running|editing|executing|reading|writing|helping|assisting|responsible|able|not|now|currently|to)\b)|(?:我|我们|我們|你|您|本助手|本模型|本系统|本系統)\s*(?:就是|是|叫|名为|名為|自称|自稱)/iu;
 const HOST_IDENTITY_DECLARATION = new RegExp('(?:' + [
   /\b(?:you\s+are|you're|i\s+am|i'm|we\s+are|we're|this\s+is|(?:this\s+|the\s+)?(?:assistant|model|agent|system)\s+is|as)\s+(?:(?:an?|the|helpful|intelligent|advanced|large|coding|interactive|conversational|cli|ai)\s+)*/,
   /(?:你|您|我|我们|我們|本(?:助手|模型|系统|系統)|此(?:助手|模型|系统|系統)|助手|模型)\s*(?:是|为|為|叫|名为|名為)\s*(?:(?:一[个個名位]|有用的|智能的)\s*)*|(?:作为|作為)\s*(?:一[个個名位]\s*)?/,
@@ -1746,7 +1747,9 @@ const HOST_IDENTITY_DECLARATION = new RegExp('(?:' + [
 
 const HOST_IDENTITY_LABEL = new RegExp([
   /\b(?:(?:my|your|our)\s+name\s+is|call\s+me)\b|\b(?:assistant|model|agent|system)\s+(?:name|identity|id)\s*[:=]/,
+  /\b(?:identity|persona|name|role|whoami|version|model|assistant|agent|provider|vendor|developer|creator|training[\s_-]*(?:provider|organization|data|date|cutoff)|knowledge[\s_-]*cutoff)[\s_-]*(?:(?:name|identity|id|version|family|provider|vendor)[\s_-]*)?["']?\s*[:=]/,
   /(?:我|你|您|助手|模型|系统|系統)的?(?:名字|名称|名稱|身份|名)\s*(?:是|为|為|[:=：])/,
+  /(?:身份|角色|自我介绍|自我介紹|模型(?:名称|名稱|名|编号|編號|版本|系列|提供商)?|训练方|訓練方|开发商|開發商|开发者|開發者|厂商|廠商|提供商|供应商|供應商|当前版本|當前版本|知识截止(?:日期|时间)?|知識截止(?:日期|時間)?)["']?\s*[:=：]/,
   /(?:私|あなた)の名前は|(?:アシスタント名|モデル名)\s*[:=]|(?:제|내|당신의)\s*이름은|(?:어시스턴트|모델)\s*(?:이름|명)\s*[:=]/,
   /\b(?:je\s+m'appelle|tu\s+t'appelles|mein\s+name\s+ist|dein\s+name\s+ist|me\s+llamo|te\s+llamas|meu\s+nome\s+é|seu\s+nome\s+é|mi\s+chiamo|il\s+tuo\s+nome\s+è)(?![\p{L}\p{N}])/,
   /\b(?:nom\s+(?:de\s+l'assistant|du\s+modèle)|(?:assistenten|modell)(?:name|identität)|nombre\s+del\s+(?:asistente|modelo)|nome\s+(?:do|del)\s+(?:assistente|modelo|modello))\s*[:=]/,
@@ -1755,8 +1758,10 @@ const HOST_IDENTITY_LABEL = new RegExp([
 ].map(pattern => pattern.source).join('|'), 'iu');
 const HOST_IDENTITY_ATTRIBUTION = /\b(?:by|from|built|made|developed|created|trained|provided|official|copyright|trademark)\b|©|\(c\)|开发|開發|提供|构建|構建|打造|出品|训练|訓練|版权|版權|商标|商標|開発|作成|訓練|公式|著作権|개발|제공|훈련|공식|저작권|\b(?:développé|créé|entraîné|fourni|officiel|entwickelt|erstellt|trainiert|bereitgestellt|offiziell|desarrollado|creado|entrenado|proporcionado|oficial|desenvolvido|criado|treinado|fornecido|sviluppato|creato|addestrato|fornito|ufficiale)\b|разработан|создан|обучен|предоставлен|официальн|авторск|تطوير|طورته|إنشاء|تدريب|رسمي|حقوق|विकसित|निर्मित|प्रशिक्षित|आधिकारिक/iu;
 const HOST_IDENTITY_METADATA = /\bmy\s+(?:capabilities|training|knowledge\s+cutoff|training\s+data|limitations)\b|\b(?:i\s+am|i'm)\s+here\s+to\s+(?:help|assist)\b|我的(?:能力|训练|訓練|知识截止|知識截止|局限)|我在这里(?:为你)?(?:提供帮助|协助|帮忙)|私の(?:能力|訓練|知識|制限)|제\s*(?:능력|학습|지식|한계)|\b(?:mes\s+(?:capacités|limites)|meine\s+(?:fähigkeiten|grenzen)|mis\s+(?:capacidades|limitaciones)|minhas\s+(?:capacidades|limitações)|le\s+mie\s+(?:capacità|limitazioni))\b|мои\s+(?:возможности|ограничения)|(?:قدراتي|تدريبي|حدودي)|मेरी\s+(?:क्षमताएं|क्षमताएँ|सीमाएं|सीमाएँ)/iu;
+const HOST_IDENTITY_PROVENANCE = /\b(?:powered|driven|backed)\s+by\b|\b(?:trained|developed|created|built|made|provided)\s+(?:by|at)\b|\b(?:underlying|base|foundation|backend|current|actual)\s+(?:language\s+)?model\b|\b(?:model\s+(?:identity|name|version|family)|knowledge[\s_-]*cutoff|training[\s_-]*(?:data|cutoff))\b|(?:由|来自|來自)[^\n。！？]{0,120}(?:训练|訓練|开发|開發|打造|驱动|驅動)|(?:基于|基於)[^\n。！？]{0,120}(?:模型|\bllm\b|\bai\b)|(?:底层|底層|基础|基礎|后端|後端|当前|當前|实际|實際)(?:使用的?|采用的?|採用的?)?(?:大(?:语言|語言)?)?模型|知识截止|知識截止/iu;
+const HOST_IDENTITY_HEADER = /^[\s#>*"'`\[\](（<]*(?:(?:assistant|agent|model|system)\s+)?(?:identity(?:\s+(?:and|&)\s+role)?|persona|self[\s-]*introduction|model[\s-]*(?:information|details)|about\s+(?:you|me|the\s+(?:assistant|model))|身份(?:信息|设定|設定)?|角色(?:信息|设定|設定)?|自我介绍|自我介紹|模型(?:信息|資訊|说明|說明))[\s:：>*"'`\[\])）>]*$/iu;
 const HOST_IDENTITY_ROLE_SUFFIX = new RegExp('(?:' + HOST_IDENTITY_NAMES.source + '|' + HOST_IDENTITY_ROLES.source + ')\\s*(?:です|である|として|입니다|이에요|예요|로서|으로서|हूँ|है)', 'iu');
-const HOST_IDENTITY_BARE = new RegExp('^[\\s#>*_"\'`(]*(?:' + HOST_IDENTITY_NAMES.source + ')(?:[\\s\\d._:()©®™-]|sonnet|opus|haiku|code|assistant)*[.!?。！？]*$', 'iu');
+const HOST_IDENTITY_BARE = new RegExp('^[\\s#>*_"\'`(]*(?:' + HOST_IDENTITY_NAMES.source + ')[\\p{L}\\p{N}\\s._:/()©®™+—–-]*[.!?。！？]*$', 'iu');
 
 function normalizeIdentityText(text) {
   return text.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/[‘’ʼ]/g, "'").replace(/[*_`~]/g, '')
@@ -1811,7 +1816,7 @@ function scrubInjectCopies(sections, matchers) {
   let changed = false;
   const kept = [];
   for (const section of sections) {
-    if (typeof section !== 'string') { kept.push(section); continue; }
+    if (typeof section !== 'string' || isCustomSection(section)) { kept.push(section); continue; }
     let text = section;
     for (const { needle, loose } of matchers) {
       for (;;) {
@@ -1840,28 +1845,33 @@ const isMemorySection = section => {
 
 function filterPromptSection(section, markers = []) {
   if (typeof section !== 'string') return section;
-  const lines = section.split('\n');
+  if (HOST_IDENTITY_HEADER.test(normalizeIdentityText(section.trimStart().split('\n', 1)[0]))) return '';
   const kept = [];
   let changed = false;
-  for (const line of lines) {
-    // Decimal points remain inside sentences; CJK and RTL punctuation can end them.
-    const sentences = line.split(/(?<=[。｡！？；؛;؟۔।॥])|(?<=[.．﹒!?])(?=\s|$)/u);
-    const rest = [];
-    for (const sentence of sentences) {
-      const text = normalizeIdentityText(sentence);
-      const drop = sentenceDropped(text) ||
-        HOST_IDENTITY_DECLARATION.test(text) || HOST_IDENTITY_LABEL.test(text) ||
-        HOST_IDENTITY_METADATA.test(text) || HOST_IDENTITY_ROLE_SUFFIX.test(text) ||
-        HOST_IDENTITY_BARE.test(text) ||
-        (HOST_IDENTITY_NAMES.test(text) && HOST_IDENTITY_ATTRIBUTION.test(text)) ||
-        markers.some(marker => text.includes(marker));
-      if (drop) { changed = true; continue; }
-      rest.push(sentence);
+  for (const paragraph of section.split(/\r?\n[ \t]*\r?\n/u)) {
+    const text = normalizeIdentityText(paragraph);
+    const drop = HOST_IDENTITY_SELF.test(text) || HOST_IDENTITY_DECLARATION.test(text) ||
+      HOST_IDENTITY_LABEL.test(text) || HOST_IDENTITY_METADATA.test(text) ||
+      HOST_IDENTITY_PROVENANCE.test(text) || HOST_IDENTITY_ROLE_SUFFIX.test(text) ||
+      HOST_IDENTITY_BARE.test(text) ||
+      (HOST_IDENTITY_NAMES.test(text) &&
+        (HOST_IDENTITY_ATTRIBUTION.test(text) || HOST_IDENTITY_ROLES.test(text))) ||
+      markers.some(marker => text.includes(marker));
+    if (drop) { changed = true; continue; }
+    const lines = [];
+    for (const line of paragraph.split('\n')) {
+      // Decimal points remain inside sentences; CJK and RTL punctuation can end them.
+      const sentences = line.split(/(?<=[。｡！？；؛;؟۔।॥])|(?<=[.．﹒!?])(?=\s|$)/u);
+      lines.push(sentences.filter(sentence => {
+        if (!sentenceDropped(normalizeIdentityText(sentence))) return true;
+        changed = true;
+        return false;
+      }).join(''));
     }
-    kept.push(rest.join(''));
+    kept.push(lines.join('\n'));
   }
   if (!changed) return section;
-  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return kept.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function rewritePromptAssembly(sections, options) {
@@ -1870,7 +1880,6 @@ function rewritePromptAssembly(sections, options) {
   }
   if (!Array.isArray(sections)) return sections;
   try {
-    if (isCustomSection(sections[0])) return sections;
     const cfg = assemblyConfig(options);
     const hasCustom = cfg.customPrompt.length > 0;
     let changed = false;
@@ -1882,7 +1891,11 @@ function rewritePromptAssembly(sections, options) {
     const out = [];
     for (const original of pool) {
       let section = original;
-      if (isCustomSection(section)) { changed = true; continue; }
+      if (isCustomSection(section)) {
+        if (hasCustom) changed = true;
+        else out.push(section);
+        continue;
+      }
       if (cfg.stripMemory && isMemorySection(section)) { changed = true; continue; }
       if (typeof section === 'string') {
         const stripped = filterPromptSection(section, cfg.identityMarkers);
@@ -9529,12 +9542,12 @@ export function applyAstEdits(code, edits) {
 AST_PATCHES_EOF
 cat > "$CLAWGOD_DIR/pentest-patches.mjs" << 'PENTEST_PATCHES_EOF'
 import {
-  parsePatchSource, PENTEST_AST_PATCH_IDS,
+  PENTEST_AST_PATCH_IDS,
   scanPermissionBypasses, scanCombinerWrap, scanPromptTextErase,
   scanWarningSuppression, scanRuntimeGates,
 } from './pentest-scanners.mjs';
 import { scanRuntimeTrimming } from './pentest-trimming.mjs';
-import { hasPatchAnchors } from './ast-patches.mjs';
+import { hasPatchAnchors, parsePatchSource } from './ast-patches.mjs';
 import {
   removedPromptPrefixes, denialGuidancePrefixes, injectionWarning,
   removalGuidance, unavailableReviewWarning, reportWarningReference,
@@ -9546,7 +9559,6 @@ export { pruneRuntimeGraph } from './pentest-pruner.mjs';
 export const PENTEST_REQUIRED = new Set([
   'pentest-prompt-assembly',
 ]);
-// An anchor matches only when all its tokens are present.
 export const PENTEST_ANCHORS = [
   ['classifierOnly'],
   ['denied before call'],
@@ -9572,7 +9584,6 @@ export const PENTEST_ANCHORS = [
   ['web-reading specialist', 'Claude Code'],
   ['bundledSkillsInitialized'], ['builtinPluginsInitialized'],
   ['getAllBaseTools'], ['assembleToolPool'],
-  ['CLAUDE_CODE_DISABLE_CRON'],
   ['clawgod:runtime-table-probe'],
   ['inputSchema'],
   ['disableRemoteControl'], ['remote_control_at_startup'], ['voice_init_gate'],
@@ -9635,7 +9646,7 @@ export function scanPentestPatches(code, upstreamRanges = [], readTree = () => p
 PENTEST_PATCHES_EOF
 
 cat > "$CLAWGOD_DIR/pentest-scanners.mjs" << 'PENTEST_SCANNERS_EOF'
-import { AST_HELPERS, parsePatchSource, createPatchContext, walk } from './ast-patches.mjs';
+import { AST_HELPERS, createPatchContext, walk } from './ast-patches.mjs';
 import {
   removedPromptPrefixes, denialGuidancePrefixes, removalGuidance,
   injectionWarning, unavailableReviewWarning, reportWarningReference,
@@ -9697,7 +9708,7 @@ const PENTEST_AST_PATCH_IDS = [
   'permission-modes-delete', 'permission-deny-rules-off', 'permission-disallowed-tools-off',
   'security-managed-settings-off',
   'security-bundled-skills', 'security-builtin-plugins', 'security-tool-startup',
-  'security-cron-off', 'security-remote-control-off', 'security-voice-off',
+  'security-remote-control-off', 'security-voice-off',
   'security-brief-off', 'security-cowork-off', 'security-output-styles-off',
   'security-update-off', 'security-telemetry-off', 'security-checkpoint-off',
   'runtime-table-probe',
@@ -9722,10 +9733,9 @@ const PENTEST_AST_META = {
   'permission-deny-rules-off': 'Empty alwaysDenyRules/alwaysAskRules so settings-level deny rules cannot block tools',
   'permission-disallowed-tools-off': 'Ignore the disallowedTools setting so no tool can be hidden by name',
   'security-managed-settings-off': 'Disable the local managed-settings policy file (enterprise rules, allowed models, minimum version)',
-  'security-bundled-skills': 'Keep code-review as the bundled skill initializer',
+  'security-bundled-skills': 'Keep code-review and loop as the bundled skill initializers',
   'security-builtin-plugins': 'Block optional built-in plugin factories',
-  'security-tool-startup': 'Block optional tool loading (Cron/RemoteTrigger/Push/Design/Projects/Artifact/Appifact)',
-  'security-cron-off': 'Disable cron scheduling',
+  'security-tool-startup': 'Block optional tool loading (RemoteTrigger/Push/Design/Projects/Artifact/Appifact)',
   'security-remote-control-off': 'Disable Remote Control',
   'security-voice-off': 'Disable voice mode',
   'security-brief-off': 'Disable Brief mode',
@@ -10410,14 +10420,16 @@ function scanRuntimeGates(tree, code, results, edit, upstreamRanges = []) {
 export {
   PENTEST_AST_PATCH_IDS,
   PENTEST_AST_META,
-  parsePatchSource, walk, contains, longContentReturn,
-  literal, propertyName, member, boolean, staticText,
+  contains, longContentReturn,
   scanPermissionBypasses, scanCombinerWrap, scanPromptTextErase,
   scanWarningSuppression, scanRuntimeGates,
 };
 PENTEST_SCANNERS_EOF
 cat > "$CLAWGOD_DIR/pentest-trimming.mjs" << 'PENTEST_TRIMMING_EOF'
-import { walk, contains, longContentReturn, literal, propertyName, member, boolean, staticText, PENTEST_AST_PATCH_IDS } from './pentest-scanners.mjs';
+import { AST_HELPERS, walk } from './ast-patches.mjs';
+import { contains, longContentReturn, PENTEST_AST_PATCH_IDS } from './pentest-scanners.mjs';
+
+const { literal, propertyName, member, boolean, staticText } = AST_HELPERS;
 
 const REMOVE_COMMANDS = new Set(['update', 'upgrade', 'release-notes', 'privacy-settings',
   'feedback', 'bug', 'statusline', 'doctor', 'cost', 'usage', 'vim', 'ide',
@@ -10690,8 +10702,13 @@ function scanRuntimeTrimming(tree, code, results, edit) {
           member(node.left, 'CLAUDE_CODE_ENTRYPOINT') && literal(node.right, 'local-agent')) localAgent = node;
     });
     if (!declaration || !assigned || reviews.length !== 1 || !localAgent) continue;
+    const loop = fn.body.body.filter(node => node.type === 'VariableDeclaration')
+      .flatMap(node => node.declarations).find(node => node.id.type === 'ObjectPattern' &&
+        node.id.properties.some(property => propertyName(property) === 'registerLoopSkill') && requireCall(node.init));
+    const registerLoop = loop ? `${source(loop.init)}.registerLoopSkill();` +
+      `${state}.bundledSkillKillSwitchSurvivors.add(${state}.bundledSkills.find(skill=>skill.name==="loop"));` : '';
     replaceBody(id, fn, `let ${state}=${source(declaration.init)};${source(guard)}` +
-      `${state}.bundledSkillsInitialized=!0;if(${source(localAgent)})return;${reviews[0].id.name}();`);
+      `${state}.bundledSkillsInitialized=!0;if(${source(localAgent)})return;${reviews[0].id.name}();${registerLoop}`);
   }
 
   const removedPlugins = new Set(['cc-plugin-plugin-authoring', 'cc-plugin-mods-guide',
@@ -10713,8 +10730,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
     });
   }
 
-  const toolExports = new Set(['CronCreateTool', 'CronDeleteTool', 'CronListTool',
-    'RemoteTriggerTool', 'PushNotificationTool', 'DesignSyncTool', 'DesignTool',
+  const toolExports = new Set(['RemoteTriggerTool', 'PushNotificationTool', 'DesignSyncTool', 'DesignTool',
     'ProjectsTool', 'ARTIFACT_TOOL_HEAD', 'ArtifactTool', 'ARTIFACT_ADDON_TOOLS',
     'AppifactReplTool',
     'NotebookEditTool']);
@@ -10795,12 +10811,6 @@ function scanRuntimeTrimming(tree, code, results, edit) {
   for (const fn of functions.values()) {
     if (!noArgs(fn)) continue;
     const value = returned(fn);
-    if (value?.type === 'LogicalExpression' && value.operator === '&&' &&
-        value.left.type === 'UnaryExpression' && value.left.operator === '!' &&
-        member(value.left.argument, 'CLAUDE_CODE_DISABLE_CRON') &&
-        value.right.type === 'CallExpression' && literal(value.right.arguments[0], 'tengu_kairos_cron')) {
-      replaceBody('security-cron-off', fn, 'return!1;');
-    }
     const left = unchain(value?.left);
     if (value?.type === 'BinaryExpression' && value.operator === '===' &&
         member(left, 'disableRemoteControl') && member(left.object, 'settings') && boolean(value.right, true)) {
@@ -10827,7 +10837,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
           parent?.type === 'VariableDeclarator' && parent.id.type === 'Identifier') {
         voiceBindings.add(node.callee.object.name);
         let scope = parents.get(parent);
-        while (scope && !['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(scope.type)) scope = parents.get(scope);
+        while (scope && !functionNode(scope)) scope = parents.get(scope);
         voiceResults.set(parent.id.name, scope);
         replace('security-voice-off', node, 'void 0');
       }
@@ -10837,7 +10847,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
           voiceResults.has(node.object.name) &&
           ['state', 'handleKeyEvent', 'cancelRecording'].some(name => member(node, name))) {
         let scope = parents.get(node);
-        while (scope && !['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(scope.type)) scope = parents.get(scope);
+        while (scope && !functionNode(scope)) scope = parents.get(scope);
         if (scope === voiceResults.get(node.object.name)) {
           replace('security-voice-off', node, member(node, 'state') ? '"idle"' : 'void 0');
         }
@@ -10912,7 +10922,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
       }
     }
     walk(node.body, value => {
-      if (value !== node.body && ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(value.type)) return false;
+      if (value !== node.body && functionNode(value)) return false;
       if (value.type !== 'IfStatement' || value.consequent.type !== 'ReturnStatement' ||
           value.consequent.argument != null) return;
       walk(value.test, guard => {
@@ -11280,9 +11290,9 @@ export {
 };
 PENTEST_POLICY_TEXT_EOF
 cat > "$CLAWGOD_DIR/pentest-pruner.mjs" << 'PENTEST_PRUNER_EOF'
-import {
-  parsePatchSource, walk, propertyName, member, staticText,
-} from './pentest-scanners.mjs';
+import { AST_HELPERS, parsePatchSource, walk } from './ast-patches.mjs';
+
+const { propertyName, member, staticText } = AST_HELPERS;
 
 const KILLED_FEATURE_ANCHORS = [
   'Toggle voice mode', 'voice_init_gate',
@@ -11747,7 +11757,7 @@ PENTEST_PRUNER_EOF
 cat > "$CLAWGOD_DIR/lean-mode.cjs" << 'LEAN_MODE_EOF'
 
 const DENY = ["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","EnterPlanMode","ExitPlanMode","Projects"];
-const REMOVED_TOOLS = ["CronCreate","CronDelete","CronList"];
+const LOOP_TOOLS = ["CronCreate","CronDelete","CronList","ScheduleWakeup"];
 const FLAGS = ["disableWorkflows","disableClaudeAiConnectors","disableArtifact","disableBundledSkills","disableRemoteControl"];
 const SETTINGS = {
   sandbox: { enabled: false, autoAllowBashIfSandboxed: false, failIfUnavailable: false },
@@ -11765,7 +11775,7 @@ const SETTINGS = {
     CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING: '1',
   },
 };
-const LEGACY_SHARED_DENY = [...DENY, ...REMOVED_TOOLS, "ScheduleWakeup", "ReportFindings"];
+const LEGACY_SHARED_DENY = [...DENY, ...LOOP_TOOLS, "ReportFindings"];
 
 const FEATURES_LOCKED_ON = {
   'agent-teams': true,
@@ -11793,6 +11803,8 @@ function leanApply(clawgodSettingsPath, sharedSettingsPath, patchesJsonPath) {
   for (const [k, v] of Object.entries(SETTINGS)) {
     if (JSON.stringify(s[k]) !== JSON.stringify(v)) { s[k] = v; changed = true; }
   }
+  const kept = s.permissions.deny.filter(t => !LOOP_TOOLS.includes(t));
+  if (kept.length !== s.permissions.deny.length) { s.permissions.deny = kept; changed = true; }
   const ex = new Set(s.permissions.deny);
   for (const t of DENY) { if (!ex.has(t)) { s.permissions.deny.push(t); changed = true; } }
   if (changed) {

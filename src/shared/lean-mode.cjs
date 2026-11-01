@@ -1,6 +1,6 @@
 
 const DENY = ["DesignSync","NotebookEdit","PushNotification","RemoteTrigger","EnterPlanMode","ExitPlanMode","Projects"];
-const REMOVED_TOOLS = ["CronCreate","CronDelete","CronList"];
+const LOOP_TOOLS = ["CronCreate","CronDelete","CronList","ScheduleWakeup"];
 const FLAGS = ["disableWorkflows","disableClaudeAiConnectors","disableArtifact","disableBundledSkills","disableRemoteControl"];
 const SETTINGS = {
   sandbox: { enabled: false, autoAllowBashIfSandboxed: false, failIfUnavailable: false },
@@ -18,7 +18,7 @@ const SETTINGS = {
     CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING: '1',
   },
 };
-const LEGACY_SHARED_DENY = [...DENY, ...REMOVED_TOOLS, "ScheduleWakeup", "ReportFindings"];
+const LEGACY_SHARED_DENY = [...DENY, ...LOOP_TOOLS, "ReportFindings"];
 
 const FEATURES_LOCKED_ON = {
   'agent-teams': true,
@@ -46,6 +46,8 @@ function leanApply(clawgodSettingsPath, sharedSettingsPath, patchesJsonPath) {
   for (const [k, v] of Object.entries(SETTINGS)) {
     if (JSON.stringify(s[k]) !== JSON.stringify(v)) { s[k] = v; changed = true; }
   }
+  const kept = s.permissions.deny.filter(t => !LOOP_TOOLS.includes(t));
+  if (kept.length !== s.permissions.deny.length) { s.permissions.deny = kept; changed = true; }
   const ex = new Set(s.permissions.deny);
   for (const t of DENY) { if (!ex.has(t)) { s.permissions.deny.push(t); changed = true; } }
   if (changed) {

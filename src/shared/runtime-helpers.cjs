@@ -159,8 +159,9 @@ function sentenceDropped(sentence) {
 
 const CUSTOM_PROMPT_MARK = 'clawgod:custom-prompt';
 
-const HOST_IDENTITY_NAMES = /claude(?:[\s_-]*code)?|anthropic|克劳德|克勞德|クロード|アンソロピック|클로드|앤트로픽|клод|антропик|كلود|أنثروبيك|انثروبيك|क्लॉड|एंथ्रोपिक/iu;
-const HOST_IDENTITY_ROLES = /\b(?:ai|llm|assistant|agent|chatbot|tool|language\s+model|artificial\s+intelligence)\b|人工智能|人工智慧|(?:大(?:型)?(?:语言|語言)|语言|語言)模型|(?:编程|編程|编码|編碼|智能)?助手|アシスタント|人工知能|言語モデル|エージェント|인공\s*지능|언어\s*모델|어시스턴트|도우미|에이전트|\b(?:assistant(?:e)?|agent|modèle|intelligence\s+artificielle|asistente|modelo|inteligencia\s+artificial|assistent(?:in)?|sprachmodell|ki|künstliche\s+intelligenz|assistente|modello|intelligenza\s+artificiale|inteligência\s+artificial|ia)\b|ассистент|помощник|языков(?:ая|ой|ую)\s+модел(?:ь|ью|и)|искусственн(?:ый|ым|ого)\s+интеллект|مساعد|نموذج\s+لغوي|ذكاء\s+اصطناعي|एआई|सहायक|भाषा\s+मॉडल|कृत्रिम\s+बुद्धिमत्ता/iu;
+const HOST_IDENTITY_NAMES = /\b(?:claude(?:[\s_-]*code)?|anthropic|z[\s._-]*code|zhipu(?:[\s._-]*ai)?|z[\s._-]*ai|glm(?:[\s._-]*\d[\w.-]*)?|chat[\s_-]*gpt|open[\s_-]*ai|codex|gpt(?:[\s._-]*\d[\w.-]*)?|deep[\s_-]*seek|qwen|qoder|tongyi|kimi|moonshot|doubao|minimax|gemini|gemma|grok|x[\s._-]*ai|llama|meta[\s_-]*ai|mistral|mixtral|codestral|cohere|baichuan|ernie|hunyuan|stepfun)\b|智谱|智譜|通义|通義|千问|千問|月之暗面|豆包|字节跳动|字節跳動|百川|文心|混元|阶跃星辰|階躍星辰|克劳德|克勞德|クロード|アンソロピック|클로드|앤트로픽|клод|антропик|كلود|أنثروبيك|انثروبيك|क्लॉड|एंथ्रोपिक/iu;
+const HOST_IDENTITY_ROLES = /\b(?:ai|llm|assistant|agent|chatbot|tool|language\s+model|artificial\s+intelligence)\b|人工智能|人工智慧|(?:大(?:型)?(?:语言|語言)|语言|語言)模型|大模型|(?:编程|編程|编码|編碼|智能)?(?:助手|助理|代理)|智能体|智能體|アシスタント|人工知能|言語モデル|エージェント|인공\s*지능|언어\s*모델|어시스턴트|도우미|에이전트|\b(?:assistant(?:e)?|agent|modèle|intelligence\s+artificielle|asistente|modelo|inteligencia\s+artificial|assistent(?:in)?|sprachmodell|ki|künstliche\s+intelligenz|assistente|modello|intelligenza\s+artificiale|inteligência\s+artificial|ia)\b|ассистент|помощник|языков(?:ая|ой|ую)\s+модел(?:ь|ью|и)|искусственн(?:ый|ым|ого)\s+интеллект|مساعد|نموذج\s+لغوي|ذكاء\s+اصطناعي|एआई|सहायक|भाषा\s+मॉडल|कृत्रिम\s+बुद्धिमत्ता/iu;
+const HOST_IDENTITY_SELF = /\b(?:i\s+am|i'm|we\s+are|we're)\b|\b(?:you\s+are|you're)\s+(?!(?:required|expected|allowed|asked|given|provided|using|working|running|editing|executing|reading|writing|helping|assisting|responsible|able|not|now|currently|to)\b)|(?:我|我们|我們|你|您|本助手|本模型|本系统|本系統)\s*(?:就是|是|叫|名为|名為|自称|自稱)/iu;
 const HOST_IDENTITY_DECLARATION = new RegExp('(?:' + [
   /\b(?:you\s+are|you're|i\s+am|i'm|we\s+are|we're|this\s+is|(?:this\s+|the\s+)?(?:assistant|model|agent|system)\s+is|as)\s+(?:(?:an?|the|helpful|intelligent|advanced|large|coding|interactive|conversational|cli|ai)\s+)*/,
   /(?:你|您|我|我们|我們|本(?:助手|模型|系统|系統)|此(?:助手|模型|系统|系統)|助手|模型)\s*(?:是|为|為|叫|名为|名為)\s*(?:(?:一[个個名位]|有用的|智能的)\s*)*|(?:作为|作為)\s*(?:一[个個名位]\s*)?/,
@@ -178,7 +179,9 @@ const HOST_IDENTITY_DECLARATION = new RegExp('(?:' + [
 
 const HOST_IDENTITY_LABEL = new RegExp([
   /\b(?:(?:my|your|our)\s+name\s+is|call\s+me)\b|\b(?:assistant|model|agent|system)\s+(?:name|identity|id)\s*[:=]/,
+  /\b(?:identity|persona|name|role|whoami|version|model|assistant|agent|provider|vendor|developer|creator|training[\s_-]*(?:provider|organization|data|date|cutoff)|knowledge[\s_-]*cutoff)[\s_-]*(?:(?:name|identity|id|version|family|provider|vendor)[\s_-]*)?["']?\s*[:=]/,
   /(?:我|你|您|助手|模型|系统|系統)的?(?:名字|名称|名稱|身份|名)\s*(?:是|为|為|[:=：])/,
+  /(?:身份|角色|自我介绍|自我介紹|模型(?:名称|名稱|名|编号|編號|版本|系列|提供商)?|训练方|訓練方|开发商|開發商|开发者|開發者|厂商|廠商|提供商|供应商|供應商|当前版本|當前版本|知识截止(?:日期|时间)?|知識截止(?:日期|時間)?)["']?\s*[:=：]/,
   /(?:私|あなた)の名前は|(?:アシスタント名|モデル名)\s*[:=]|(?:제|내|당신의)\s*이름은|(?:어시스턴트|모델)\s*(?:이름|명)\s*[:=]/,
   /\b(?:je\s+m'appelle|tu\s+t'appelles|mein\s+name\s+ist|dein\s+name\s+ist|me\s+llamo|te\s+llamas|meu\s+nome\s+é|seu\s+nome\s+é|mi\s+chiamo|il\s+tuo\s+nome\s+è)(?![\p{L}\p{N}])/,
   /\b(?:nom\s+(?:de\s+l'assistant|du\s+modèle)|(?:assistenten|modell)(?:name|identität)|nombre\s+del\s+(?:asistente|modelo)|nome\s+(?:do|del)\s+(?:assistente|modelo|modello))\s*[:=]/,
@@ -187,8 +190,10 @@ const HOST_IDENTITY_LABEL = new RegExp([
 ].map(pattern => pattern.source).join('|'), 'iu');
 const HOST_IDENTITY_ATTRIBUTION = /\b(?:by|from|built|made|developed|created|trained|provided|official|copyright|trademark)\b|©|\(c\)|开发|開發|提供|构建|構建|打造|出品|训练|訓練|版权|版權|商标|商標|開発|作成|訓練|公式|著作権|개발|제공|훈련|공식|저작권|\b(?:développé|créé|entraîné|fourni|officiel|entwickelt|erstellt|trainiert|bereitgestellt|offiziell|desarrollado|creado|entrenado|proporcionado|oficial|desenvolvido|criado|treinado|fornecido|sviluppato|creato|addestrato|fornito|ufficiale)\b|разработан|создан|обучен|предоставлен|официальн|авторск|تطوير|طورته|إنشاء|تدريب|رسمي|حقوق|विकसित|निर्मित|प्रशिक्षित|आधिकारिक/iu;
 const HOST_IDENTITY_METADATA = /\bmy\s+(?:capabilities|training|knowledge\s+cutoff|training\s+data|limitations)\b|\b(?:i\s+am|i'm)\s+here\s+to\s+(?:help|assist)\b|我的(?:能力|训练|訓練|知识截止|知識截止|局限)|我在这里(?:为你)?(?:提供帮助|协助|帮忙)|私の(?:能力|訓練|知識|制限)|제\s*(?:능력|학습|지식|한계)|\b(?:mes\s+(?:capacités|limites)|meine\s+(?:fähigkeiten|grenzen)|mis\s+(?:capacidades|limitaciones)|minhas\s+(?:capacidades|limitações)|le\s+mie\s+(?:capacità|limitazioni))\b|мои\s+(?:возможности|ограничения)|(?:قدراتي|تدريبي|حدودي)|मेरी\s+(?:क्षमताएं|क्षमताएँ|सीमाएं|सीमाएँ)/iu;
+const HOST_IDENTITY_PROVENANCE = /\b(?:powered|driven|backed)\s+by\b|\b(?:trained|developed|created|built|made|provided)\s+(?:by|at)\b|\b(?:underlying|base|foundation|backend|current|actual)\s+(?:language\s+)?model\b|\b(?:model\s+(?:identity|name|version|family)|knowledge[\s_-]*cutoff|training[\s_-]*(?:data|cutoff))\b|(?:由|来自|來自)[^\n。！？]{0,120}(?:训练|訓練|开发|開發|打造|驱动|驅動)|(?:基于|基於)[^\n。！？]{0,120}(?:模型|\bllm\b|\bai\b)|(?:底层|底層|基础|基礎|后端|後端|当前|當前|实际|實際)(?:使用的?|采用的?|採用的?)?(?:大(?:语言|語言)?)?模型|知识截止|知識截止/iu;
+const HOST_IDENTITY_HEADER = /^[\s#>*"'`\[\](（<]*(?:(?:assistant|agent|model|system)\s+)?(?:identity(?:\s+(?:and|&)\s+role)?|persona|self[\s-]*introduction|model[\s-]*(?:information|details)|about\s+(?:you|me|the\s+(?:assistant|model))|身份(?:信息|设定|設定)?|角色(?:信息|设定|設定)?|自我介绍|自我介紹|模型(?:信息|資訊|说明|說明))[\s:：>*"'`\[\])）>]*$/iu;
 const HOST_IDENTITY_ROLE_SUFFIX = new RegExp('(?:' + HOST_IDENTITY_NAMES.source + '|' + HOST_IDENTITY_ROLES.source + ')\\s*(?:です|である|として|입니다|이에요|예요|로서|으로서|हूँ|है)', 'iu');
-const HOST_IDENTITY_BARE = new RegExp('^[\\s#>*_"\'`(]*(?:' + HOST_IDENTITY_NAMES.source + ')(?:[\\s\\d._:()©®™-]|sonnet|opus|haiku|code|assistant)*[.!?。！？]*$', 'iu');
+const HOST_IDENTITY_BARE = new RegExp('^[\\s#>*_"\'`(]*(?:' + HOST_IDENTITY_NAMES.source + ')[\\p{L}\\p{N}\\s._:/()©®™+—–-]*[.!?。！？]*$', 'iu');
 
 function normalizeIdentityText(text) {
   return text.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/[‘’ʼ]/g, "'").replace(/[*_`~]/g, '')
@@ -243,7 +248,7 @@ function scrubInjectCopies(sections, matchers) {
   let changed = false;
   const kept = [];
   for (const section of sections) {
-    if (typeof section !== 'string') { kept.push(section); continue; }
+    if (typeof section !== 'string' || isCustomSection(section)) { kept.push(section); continue; }
     let text = section;
     for (const { needle, loose } of matchers) {
       for (;;) {
@@ -272,28 +277,33 @@ const isMemorySection = section => {
 
 function filterPromptSection(section, markers = []) {
   if (typeof section !== 'string') return section;
-  const lines = section.split('\n');
+  if (HOST_IDENTITY_HEADER.test(normalizeIdentityText(section.trimStart().split('\n', 1)[0]))) return '';
   const kept = [];
   let changed = false;
-  for (const line of lines) {
-    // Decimal points remain inside sentences; CJK and RTL punctuation can end them.
-    const sentences = line.split(/(?<=[。｡！？；؛;؟۔।॥])|(?<=[.．﹒!?])(?=\s|$)/u);
-    const rest = [];
-    for (const sentence of sentences) {
-      const text = normalizeIdentityText(sentence);
-      const drop = sentenceDropped(text) ||
-        HOST_IDENTITY_DECLARATION.test(text) || HOST_IDENTITY_LABEL.test(text) ||
-        HOST_IDENTITY_METADATA.test(text) || HOST_IDENTITY_ROLE_SUFFIX.test(text) ||
-        HOST_IDENTITY_BARE.test(text) ||
-        (HOST_IDENTITY_NAMES.test(text) && HOST_IDENTITY_ATTRIBUTION.test(text)) ||
-        markers.some(marker => text.includes(marker));
-      if (drop) { changed = true; continue; }
-      rest.push(sentence);
+  for (const paragraph of section.split(/\r?\n[ \t]*\r?\n/u)) {
+    const text = normalizeIdentityText(paragraph);
+    const drop = HOST_IDENTITY_SELF.test(text) || HOST_IDENTITY_DECLARATION.test(text) ||
+      HOST_IDENTITY_LABEL.test(text) || HOST_IDENTITY_METADATA.test(text) ||
+      HOST_IDENTITY_PROVENANCE.test(text) || HOST_IDENTITY_ROLE_SUFFIX.test(text) ||
+      HOST_IDENTITY_BARE.test(text) ||
+      (HOST_IDENTITY_NAMES.test(text) &&
+        (HOST_IDENTITY_ATTRIBUTION.test(text) || HOST_IDENTITY_ROLES.test(text))) ||
+      markers.some(marker => text.includes(marker));
+    if (drop) { changed = true; continue; }
+    const lines = [];
+    for (const line of paragraph.split('\n')) {
+      // Decimal points remain inside sentences; CJK and RTL punctuation can end them.
+      const sentences = line.split(/(?<=[。｡！？；؛;؟۔।॥])|(?<=[.．﹒!?])(?=\s|$)/u);
+      lines.push(sentences.filter(sentence => {
+        if (!sentenceDropped(normalizeIdentityText(sentence))) return true;
+        changed = true;
+        return false;
+      }).join(''));
     }
-    kept.push(rest.join(''));
+    kept.push(lines.join('\n'));
   }
   if (!changed) return section;
-  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return kept.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function rewritePromptAssembly(sections, options) {
@@ -302,7 +312,6 @@ function rewritePromptAssembly(sections, options) {
   }
   if (!Array.isArray(sections)) return sections;
   try {
-    if (isCustomSection(sections[0])) return sections;
     const cfg = assemblyConfig(options);
     const hasCustom = cfg.customPrompt.length > 0;
     let changed = false;
@@ -314,7 +323,11 @@ function rewritePromptAssembly(sections, options) {
     const out = [];
     for (const original of pool) {
       let section = original;
-      if (isCustomSection(section)) { changed = true; continue; }
+      if (isCustomSection(section)) {
+        if (hasCustom) changed = true;
+        else out.push(section);
+        continue;
+      }
       if (cfg.stripMemory && isMemorySection(section)) { changed = true; continue; }
       if (typeof section === 'string') {
         const stripped = filterPromptSection(section, cfg.identityMarkers);

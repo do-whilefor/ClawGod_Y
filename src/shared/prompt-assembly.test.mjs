@@ -47,8 +47,7 @@ const opts = prompt => ({ customPrompt: prompt, stripMemory: true });
   const out = rewritePromptAssembly(
     ['You are Claude Code. Prefer editing existing files to creating new ones.'],
     opts(prompt));
-  assert.equal(out.length, 2);
-  assert.ok(out[1].includes('Prefer editing existing files'));
+  assert.equal(out.length, 1);
 }
 
 {
@@ -86,9 +85,9 @@ const opts = prompt => ({ customPrompt: prompt, stripMemory: true });
 
 {
   const prompt = 'Custom role.';
-  const line = 'You are DeepSeek Harness, an AI coding assistant.\nPrefer editing existing files.';
+  const line = 'You are DeepSeek Harness, an AI coding assistant.\n\nPrefer editing existing files.';
   const defaultOut = rewritePromptAssembly([line], opts(prompt));
-  assert.ok(defaultOut[1].includes('DeepSeek Harness'));
+  assert.ok(!defaultOut[1].includes('DeepSeek Harness'));
   const customOut = rewritePromptAssembly([line], {
     customPrompt: prompt, stripMemory: true,
     identityMarkers: ['you are deepseek harness'],
