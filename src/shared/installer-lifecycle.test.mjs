@@ -78,6 +78,7 @@ function Invoke-RestMethod { if($env:CLAWGOD_FAIL_CACHE -eq '1'){throw 'Uninstal
 ${['PROCESSOR_ARCHITECTURE', 'PROCESSOR_ARCHITEW6432'].filter(key => Object.hasOwn(extra, key)).map(key => `$env:${key}='${extra[key].replaceAll("'", "''")}'`).join('\n')}
 ${extra.CLAWGOD_FAIL_LAUNCHER ? '$lock=[IO.File]::Open((Join-Path $env:USERPROFILE ".local\\bin\\clawgod.cmd"),"Open","Read","Read")' : ''}
 & ([scriptblock]::Create([IO.File]::ReadAllText($env:CLAWGOD_FIXTURE_INSTALLER))) ${args.map(arg => `'${arg.replaceAll("'", "''")}'`).join(' ')}
+if (-not $?) { exit 1 }
 `;
   return spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], {
     env: { ...env, ...extra }, encoding: 'utf8', timeout: 60000,
@@ -154,7 +155,7 @@ exec /bin/mv "$@"\n`);
     const oldLauncher = readFileSync(launcher);
     const result = run(['latest'], extra, true);
     assert.ok(Number.isInteger(result.status), result.error?.message || 'Installer did not exit normally');
-    assert.notEqual(result.status, 0, 'A failed finalization must fail installation');
+    assert.notEqual(result.status, 0, `Installation must fail for ${JSON.stringify(extra)}:\n${result.stdout}${result.stderr}`);
     assert.doesNotMatch(result.stdout, /ClawGod installed!/);
     for (const [name, content] of Object.entries(old)) assert.deepEqual(readFileSync(join(dir, name)), content, `Rollback failed for ${name}`);
     assert.deepEqual(readFileSync(launcher), oldLauncher, 'Failed publication must preserve the previous launcher');

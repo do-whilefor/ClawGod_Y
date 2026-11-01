@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { featuresMeta } from './patch-registry.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'clawgod compile-'));
 const home = join(root, 'profile space \u6d4b\u8bd5');
@@ -20,6 +21,9 @@ try {
   for (const name of ['compile-runtime.mjs', 'cli.cjs', 'runtime-helpers.cjs', 'feature-gates.cjs', 'lean-mode.cjs', 'openai-proxy.cjs', 'ast-patches.mjs', 'acorn.mjs']) {
     copyFileSync(new URL('./' + name, import.meta.url), join(dir, name));
   }
+  const gates = join(dir, 'feature-gates.cjs');
+  writeFileSync(gates, readFileSync(gates, 'utf8').replace('const CLAWGOD_FEATURES_META = {};',
+    `const CLAWGOD_FEATURES_META = ${JSON.stringify(featuresMeta())};`));
   writeFileSync(join(dir, 'bun-ant-shim.cjs'), '');
   writeFileSync(join(dir, 'system-prompt.md'), 'Fixture prompt.\n');
   const original = `// clawgod:probe-modules ["bunfs/probe.cjs"]
