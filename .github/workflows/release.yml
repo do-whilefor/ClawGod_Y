@@ -6,64 +6,45 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  installer-checks:
-    uses: ./.github/workflows/installer-checks.yml
+  compat:
+    permissions:
+      contents: write
+      issues: write
+    uses: ./.github/workflows/compat-daily.yml
 
-  smoke:
-    name: Release smoke (Claude ${{ matrix.claude }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        claude: ['2.1.314', stable, latest]
-    env:
-      CLAUDE_CHANNEL: ${{ matrix.claude }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Set up Node.js 24
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          package-manager-cache: false
-
-      - name: Set up Bun (canary)
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: canary
-
-      - name: Install ripgrep
-        run: sudo apt-get update -qq && sudo apt-get install -y ripgrep
-
-      - name: Verify generated installers
-        run: node build.js --check
-
-      - name: Dry-run install and startup probe
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=$(npm view "@anthropic-ai/claude-code@$CLAUDE_CHANNEL" version)
-          echo "Testing Claude $CLAUDE_CHANNEL -> $version"
-          bash install.sh "$CLAUDE_CHANNEL" >/tmp/release-install.log 2>&1 || { cat /tmp/release-install.log; exit 1; }
-          installed=$(cat "$HOME/.clawgod/.source-version")
-          [[ "$installed" == "$version" ]] || { echo "::error::expected Claude $version, installed $installed"; exit 1; }
-          native_version=$("$HOME/.clawgod/claude.fallback" --version)
-          [[ "$native_version" == "$version (Claude Code)" ]] || { echo "::error::native subprocess version mismatch: $native_version"; exit 1; }
-          node "$HOME/.clawgod/startup-check.cjs" "$(command -v bun)" "$HOME/.clawgod/cli.cjs" --probe-tools
+  build-import:
+    uses: ./.github/workflows/build-import.yml
 
   release:
-    needs: [smoke, installer-checks]
+    needs: [compat, build-import]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Download import tools
+        uses: actions/download-artifact@v7
+        with:
+          pattern: clawgod-import-*
+          merge-multiple: true
+          path: dist
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
 
       - name: Resolve versions
         id: versions
@@ -110,14 +91,14 @@ jobs:
             fi
           } > release-notes.md
 
-      - name: Inject version from tag
+      - name: Prepare and verify final release files
         run: |
-          ver="${GITHUB_REF_NAME#v}"
-          echo "Injecting version: $ver"
-          sed -i "s/^CLAWGOD_SELF_VERSION=\".*\"/CLAWGOD_SELF_VERSION=\"${ver}\"/" install.sh
-          sed -i "s/^\\\$ClawSelfVersion = \"[^\"]*\"/\$ClawSelfVersion = \"${ver}\"/" install.ps1
-          grep 'CLAWGOD_SELF_VERSION=' install.sh | head -1
-          grep 'ClawSelfVersion' install.ps1 | head -1
+          node .github/scripts/release-assets.cjs "$GITHUB_REF_NAME"
+          bash -n install.sh
+
+      - name: Check installation from the final release script
+        # The lifecycle fixture replaces network/model payloads but keeps the final script structure.
+        run: node src/shared/installer-lifecycle.test.mjs install.sh
 
       - name: Create GitHub release
         env:
@@ -125,9 +106,9 @@ jobs:
         run: |
           tag="${{ steps.versions.outputs.tag }}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" install.sh install.ps1 --clobber
+            gh release upload "$tag" install.sh install.ps1 dist/clawgod-import-* --clobber
           else
-            gh release create "$tag" install.sh install.ps1 \
+            gh release create "$tag" install.sh install.ps1 dist/clawgod-import-* \
               --title "ClawGod_Y $tag" \
               --notes-file release-notes.md
           fi

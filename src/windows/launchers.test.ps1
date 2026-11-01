@@ -53,6 +53,21 @@ process.stdout.write(child.stdout);process.exit(child.status);
     Assert ($LASTEXITCODE -eq 0) 'Selected native subprocess failed'
     Assert ($childVersion -eq (& $node --version)) 'Launcher spawned a different native executable'
 
+    $compiled = Join-Path $ClawDir 'cli.compiled-fixture.exe'
+    Copy-Item $node $compiled
+    Set-Content (Join-Path $ClawDir '.compiled-runtime') 'cli.compiled-fixture.exe' -Encoding ASCII
+    $compiledResult = (& cmd.exe /d /c 'clawgod -e "process.stdout.write(process.argv[1])" "two words"' | Out-String).Trim()
+    Assert ($LASTEXITCODE -eq 0) 'Compiled launcher failed'
+    Assert ($compiledResult -eq 'two words') 'Compiled launcher lost arguments or used the source path'
+    $uninstallResult = (& cmd.exe /d /c 'clawgod --uninstall' | Out-String).Trim()
+    Assert ($LASTEXITCODE -eq 0) 'Uninstall did not bypass compiled mode'
+    Assert ($uninstallResult -eq (& $node --version)) 'Uninstall must use the source path'
+    Remove-Item -LiteralPath $compiled
+    $fallbackResult = (& cmd.exe /d /c 'clawgod --version' | Out-String).Trim()
+    Assert ($LASTEXITCODE -eq 0) 'Missing compiled binary did not fall back to source'
+    Assert ($fallbackResult -eq (& $node --version)) 'Source fallback returned the wrong version'
+    Remove-Item -LiteralPath (Join-Path $ClawDir '.compiled-runtime')
+
     $elsewhere = Join-Path $root 'elsewhere'
     New-Item -ItemType Directory -Force $elsewhere | Out-Null
     Copy-Item $node (Join-Path $elsewhere 'claude.exe')

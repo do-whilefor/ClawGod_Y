@@ -50,6 +50,22 @@ try {
   assert.equal(child.status, 0, child.stderr);
   assert.equal(child.stdout.trim(), '2.1.308 (Claude Code)', 'Child process must use the selected version');
 
+  const compiled = join(clawgod, 'cli.compiled-fixture');
+  writeFileSync(compiled, '#!/bin/bash\nprintf "compiled:%s:%s\\n" "$1" "$2"\n', { mode: 0o755 });
+  writeFileSync(join(clawgod, '.compiled-runtime'), 'cli.compiled-fixture\n');
+  const launch = args => spawnSync(join(bin, 'clawgod'), args, { env, encoding: 'utf8' });
+  const compiledResult = launch(['fixture', 'two words']);
+  assert.equal(compiledResult.status, 0, compiledResult.stderr);
+  assert.equal(compiledResult.stdout.trim(), 'compiled:fixture:two words', 'Launcher must preserve arguments in compiled mode');
+  const uninstallResult = launch(['--uninstall']);
+  assert.equal(uninstallResult.status, 0, uninstallResult.stderr);
+  assert.equal(uninstallResult.stdout.trim(), '2.1.308 (Claude Code)', 'Uninstall must use the source path');
+  rmSync(compiled);
+  const fallbackResult = launch(['--version']);
+  assert.equal(fallbackResult.status, 0, fallbackResult.stderr);
+  assert.equal(fallbackResult.stdout.trim(), '2.1.308 (Claude Code)', 'Missing compiled binary must fall back to source');
+  rmSync(join(clawgod, '.compiled-runtime'));
+
   rmSync(claude);
   const versions = join(root, '.local/share/claude/versions');
   mkdirSync(versions, { recursive: true });

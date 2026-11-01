@@ -14,16 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Delete all repo caches
+      - name: Delete caches unused for at least seven days
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          ids=$(gh cache list --repo "$REPO" --limit 200 --json id --jq '.[].id')
+          ids=$(gh cache list --repo "$REPO" --limit 10000 --json id,lastAccessedAt \
+            --jq '.[] | select(.lastAccessedAt < (now - 604800 | strftime("%Y-%m-%dT%H:%M:%SZ"))) | .id')
           if [[ -z "$ids" ]]; then
-            echo "No caches to delete."
+            echo "No unused caches to delete."
             exit 0
           fi
           count=$(printf '%s\n' "$ids" | grep -c . || true)
@@ -34,4 +35,4 @@ jobs:
               && echo "  ✓ $id" \
               || echo "  ✗ $id (already gone or transient error)"
           done <<< "$ids"
-          echo "Done. Next compat-daily run will repopulate ~/.npm fresh."
+          echo "Done. Recently used version caches were preserved."

@@ -1,20 +1,20 @@
 name: Build clawgod-import
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -52,9 +52,9 @@ jobs:
         working-directory: tools/provider-import
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
+            cross build --locked --release --target ${{ matrix.target }}
           else
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --locked --release --target ${{ matrix.target }}
           fi
         shell: bash
 
@@ -67,30 +67,13 @@ jobs:
           fi
           cp "$src" "${{ matrix.artifact }}"
 
+      - name: Check native release executable starts
+        if: ${{ !matrix.cross }}
+        shell: bash
+        run: ./"${{ matrix.artifact }}" --help
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
-
-  attach-to-release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v7
-        with:
-          path: dist
-
-      - name: Upload to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tag="${GITHUB_REF_NAME}"
-          for dir in dist/*/; do
-            for file in "$dir"*; do
-              echo "Uploading: $file"
-              gh release upload "$tag" "$file" --clobber --repo "${{ github.repository }}"
-            done
-          done

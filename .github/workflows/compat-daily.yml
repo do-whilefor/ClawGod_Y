@@ -2,6 +2,7 @@ name: Compat Daily
 
 
 on:
+  workflow_call:
   schedule:
     - cron: '17 7 * * *'
   workflow_dispatch:
@@ -14,6 +15,7 @@ on:
       - src/**
       - .github/workflows/compat-daily.yml
       - .github/workflows/installer-checks.yml
+      - .github/workflows/platform-compat.yml
       - .github/workflows/release.yml
       - .github/workflows/close-inactive-issues.yml
       - .github/scripts/**
@@ -25,6 +27,7 @@ on:
       - src/**
       - .github/workflows/compat-daily.yml
       - .github/workflows/installer-checks.yml
+      - .github/workflows/platform-compat.yml
       - .github/workflows/release.yml
       - .github/workflows/close-inactive-issues.yml
       - .github/scripts/**
@@ -34,6 +37,29 @@ permissions:
   issues: write
 
 jobs:
+  resolve-versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      versions: ${{ steps.resolve.outputs.versions }}
+      default: ${{ steps.resolve.outputs.default }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Resolve and deduplicate Claude versions
+        id: resolve
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const resolve = require('./.github/scripts/resolve-claude-versions.cjs');
+            const result = resolve(fs.readFileSync('src/templates/install.sh', 'utf8'));
+            core.setOutput('default', result.defaultVersion);
+            core.setOutput('versions', JSON.stringify(result.versions));
+
   installer-checks:
     uses: ./.github/workflows/installer-checks.yml
 
@@ -65,6 +91,9 @@ jobs:
       - name: Test inactive issue policy
         run: node .github/scripts/close-inactive-issues.test.cjs
 
+      - name: Check CI version resolution, coverage gates and release assets
+        run: node .github/scripts/ci-gates.test.cjs
+
       - name: Run terminal reply regression tests
         run: node src/shared/terminal-reply.test.mjs
 
@@ -93,16 +122,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in src/shared/*.mjs src/shared/*.cjs src/windows/*.mjs src/windows/*.cjs; do
+          for file in src/shared/*.mjs src/shared/*.cjs src/windows/*.mjs src/windows/*.cjs src/ci/*.cjs .github/scripts/*.cjs; do
             node --check "$file"
           done
 
   smoke:
-    name: ${{ matrix.name }} (Claude ${{ matrix.claude }})
+    name: ${{ matrix.name }} (Claude ${{ matrix.claude.channels }})
+    needs: resolve-versions
     strategy:
       fail-fast: false
       matrix:
-        claude: ['2.1.314', stable, latest]
+        claude: ${{ fromJSON(needs.resolve-versions.outputs.versions) }}
         os: [ubuntu-latest, macos-26]
         include:
           - name: Linux smoke (x64)
@@ -119,7 +149,8 @@ jobs:
       SMOKE_PLATFORM: ${{ matrix.platform }}
       SMOKE_RUNNER: ${{ matrix.os }}
       EXPECTED_ARCH: ${{ matrix.arch }}
-      CLAUDE_CHANNEL: ${{ matrix.claude }}
+      CLAUDE_CHANNEL: ${{ matrix.claude.channels }}
+      CLAUDE_VERSION: ${{ matrix.claude.version }}
     steps:
       - uses: actions/checkout@v5
 
@@ -138,9 +169,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.npm
-          key: npm-claude-${{ runner.os }}-${{ runner.arch }}-${{ matrix.claude }}-${{ github.run_id }}
+          key: npm-claude-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.claude.version }}
           restore-keys: |
-            npm-claude-${{ runner.os }}-${{ runner.arch }}-
+            npm-claude-v2-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install ripgrep (Linux)
         if: runner.os == 'Linux'
@@ -180,10 +211,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version=$(npm view "@anthropic-ai/claude-code@$CLAUDE_CHANNEL" version)
-          echo "Testing Claude $CLAUDE_CHANNEL -> $version"
-          echo "CLAUDE_VERSION=$version" >> "$GITHUB_ENV"
-          bash install.sh "$CLAUDE_CHANNEL" 2>&1 | tee /tmp/install.log
+          echo "Testing Claude $CLAUDE_CHANNEL -> $CLAUDE_VERSION"
+          bash install.sh "$CLAUDE_VERSION" 2>&1 | tee /tmp/install.log
 
       - name: Verify install artifacts
         shell: bash
@@ -250,14 +279,10 @@ jobs:
         shell: bash
         run: CLAWGOD_TEST_BUN="$(command -v bun)" node src/shared/post-process.test.mjs
 
-      - name: Assert all patches applied (parse install log)
+      - name: Check patch coverage against the known baseline
         shell: bash
         run: |
-          line=$(grep -E 'Result: [0-9]+ applied, [0-9]+ skipped, [0-9]+ failed' /tmp/install.log | tail -1 || true)
-          echo "Patch summary: ${line:-<not found>}"
-          [[ -n "$line" ]] || { echo "::error::patch.mjs result line missing from install.sh output"; exit 1; }
-          failed=$(echo "$line" | sed -E 's/.*skipped, ([0-9]+) failed.*/\1/')
-          [[ "$failed" -eq 0 ]] || { echo "::error::patch.mjs reported $failed failed patches"; exit 1; }
+          node src/ci/check-patch-coverage.cjs /tmp/install.log "$SMOKE_PLATFORM"
 
       - name: Verify configured provider was preserved
         run: node src/ci/provider-startup-fixture.cjs verify /tmp/install.log
@@ -361,32 +386,6 @@ jobs:
 
           echo "── All functional checks passed ──"
 
-      - name: Publish supported-Claude-version badge
-        if: success() && matrix.platform == 'linux' && matrix.claude == '2.1.314' && github.event_name != 'pull_request'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          version=$(cat "$HOME/.clawgod/.source-version")
-          [[ -n "$version" ]] || { echo "::error::source-version missing"; exit 1; }
-          tmp=$(mktemp -d)
-          cd "$tmp"
-          cat > claude-version.json <<EOF
-          {
-            "schemaVersion": 1,
-            "label": "Claude tested",
-            "message": "$version",
-            "color": "brightgreen"
-          }
-          EOF
-          git init -q -b badges
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git add claude-version.json
-          git commit -q -m "compat-daily: claude $version verified"
-          git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:badges
-          echo "Published badge: claude $version"
-
       - name: Open / update issue on scheduled failure
         if: failure() && github.event_name == 'schedule'
         uses: actions/github-script@v8
@@ -436,18 +435,50 @@ jobs:
               });
             }
 
+  publish-badge:
+    needs: [resolve-versions, build-sources, installer-checks, smoke, windows-smoke]
+    if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish supported-Claude-version badge after all checks pass
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_VERSION: ${{ needs.resolve-versions.outputs.default }}
+        run: |
+          version="$CLAUDE_VERSION"
+          tmp=$(mktemp -d)
+          cd "$tmp"
+          cat > claude-version.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "Claude tested",
+            "message": "$version",
+            "color": "brightgreen"
+          }
+          EOF
+          git init -q -b badges
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add claude-version.json
+          git commit -q -m "compat-daily: claude $version verified"
+          git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:badges
+          echo "Published badge: claude $version"
+
   windows-smoke:
-    name: Windows smoke (PowerShell 5.1, Claude ${{ matrix.claude }})
+    name: Windows smoke (PowerShell 5.1, Claude ${{ matrix.claude.channels }})
+    needs: resolve-versions
     runs-on: windows-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        claude: ['2.1.314', stable, latest]
+        claude: ${{ fromJSON(needs.resolve-versions.outputs.versions) }}
         bun: [canary]
     env:
       NPM_CONFIG_CACHE: ${{ github.workspace }}\.npm-cache
-      CLAUDE_CHANNEL: ${{ matrix.claude }}
+      CLAUDE_CHANNEL: ${{ matrix.claude.channels }}
+      CLAUDE_VERSION: ${{ matrix.claude.version }}
     steps:
       - uses: actions/checkout@v5
 
@@ -485,9 +516,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}\.npm-cache
-          key: npm-claude-${{ runner.os }}-${{ matrix.claude }}-${{ github.run_id }}
+          key: npm-claude-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.claude.version }}
           restore-keys: |
-            npm-claude-${{ runner.os }}-
+            npm-claude-v2-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install ripgrep
         shell: powershell
@@ -540,17 +571,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = (& npm view "@anthropic-ai/claude-code@$env:CLAUDE_CHANNEL" version | Out-String).Trim()
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to resolve Claude version' }
-          Write-Host "Testing Claude $env:CLAUDE_CHANNEL -> $version"
-          "CLAUDE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Testing Claude $env:CLAUDE_CHANNEL -> $env:CLAUDE_VERSION"
           $log = Join-Path $env:RUNNER_TEMP 'install-windows.log'
           $installerPath = "$env:GITHUB_WORKSPACE\install.ps1"
           $installer = [System.IO.File]::ReadAllText(
             $installerPath,
             [System.Text.Encoding]::ASCII
           )
-          & ([scriptblock]::Create($installer)) $env:CLAUDE_CHANNEL *>&1 |
+          & ([scriptblock]::Create($installer)) $env:CLAUDE_VERSION *>&1 |
             Tee-Object -FilePath $log
 
       - name: Verify install artifacts
@@ -643,20 +671,12 @@ jobs:
           node src/shared/post-process.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Assert all patches applied
+      - name: Check patch coverage against the known baseline
         shell: powershell
         run: |
           $log = Join-Path $env:RUNNER_TEMP 'install-windows.log'
-          $summary = Select-String -Path $log `
-            -Pattern 'Result: [0-9]+ applied, [0-9]+ skipped, [0-9]+ failed' |
-            Select-Object -Last 1
-          if (-not $summary) {
-            Write-Error 'patch.mjs result line missing from install.ps1 output'
-          }
-          Write-Host "Patch summary: $($summary.Line)"
-          if ($summary.Line -notmatch 'skipped, 0 failed') {
-            Write-Error "patch.mjs reported failed patches: $($summary.Line)"
-          }
+          node src/ci/check-patch-coverage.cjs $log windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify configured provider was preserved
         shell: powershell
@@ -728,7 +748,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: windows-tui-${{ matrix.claude }}
+          name: windows-tui-${{ matrix.claude.version }}
           if-no-files-found: ignore
           path: |
             ${{ runner.temp }}/tui-artifacts/*.log

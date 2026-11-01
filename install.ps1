@@ -2,7 +2,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidatePattern('^(latest|stable|[0-9]+\.[0-9]+\.[0-9]+)$')]
-    [string]$Version = "2.1.314",
+    [string]$Version = "2.1.316",
     [switch]$Uninstall
 )
 
@@ -240,7 +240,7 @@ function get(url, redirects = 0) {
     reqMod(opts, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        return get(res.headers.location, redirects + 1).then(resolve, reject);
+        return get(new URL(res.headers.location, parsed).href, redirects + 1).then(resolve, reject);
       }
       if (res.statusCode !== 200) {
         res.resume();
@@ -267,9 +267,11 @@ while (off + 512 <= buf.length) {
   const name = buf.slice(off, off + 100).toString('utf8').replace(/\0+$/, '');
   if (!name) break;
   const sizeOct = buf.slice(off + 124, off + 136).toString('utf8').replace(/[\0\s]+$/, '');
-  const size = parseInt(sizeOct, 8) || 0;
+  if (!/^[0-7]+$/.test(sizeOct)) throw new Error(`Invalid tar entry size: ${name}`);
+  const size = parseInt(sizeOct, 8);
   const typeflag = String.fromCharCode(buf[off + 156]);
   off += 512;
+  if (off + Math.ceil(size / 512) * 512 > buf.length) throw new Error(`Truncated tar entry: ${name}`);
   if (typeflag === '0' || typeflag === '\0') {
     const dest = join(outDir, name);
     mkdirSync(dirname(dest), { recursive: true });
@@ -278,6 +280,7 @@ while (off + 512 <= buf.length) {
   }
   off += Math.ceil(size / 512) * 512;
 }
+if (files === 0) throw new Error('Tarball contains no files');
 console.log(`Extracted ${files} files`);
 console.log(`VERSION=${meta.version}`);
 '@ | Set-Content $fetchScript -Encoding UTF8

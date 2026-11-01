@@ -47,7 +47,9 @@ try {
     assert.match(patched, /return"ant"/);
     assert.notEqual(patched, clean);
     for (let attempt = 0; attempt < 3; attempt++) {
+      writeFileSync(join(dir, '.compiled-runtime'), 'cli.compiled-old\n');
       const output = succeeds();
+      assert.equal(existsSync(join(dir, '.compiled-runtime')), false, 'Repatching must invalidate compiled startup code');
       assert.equal(output.match(/Result: .*/)[0], first.match(/Result: .*/)[0]);
       assert.equal(readFileSync(target, 'utf8'), patched, 'no nested or duplicate patches');
       assert.equal(readFileSync(snapshot, 'utf8'), backup, 'clean backup stays clean');
