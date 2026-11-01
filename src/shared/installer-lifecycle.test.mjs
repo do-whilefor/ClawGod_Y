@@ -75,6 +75,7 @@ const run = (args = [], extra = {}, piped = false) => {
   });
   const command = `function Invoke-WebRequest { throw 'Optional import download is offline' }
 function Invoke-RestMethod { if($env:CLAWGOD_FAIL_CACHE -eq '1'){throw 'Uninstaller download failed'};[IO.File]::ReadAllText($env:CLAWGOD_FIXTURE_INSTALLER) }
+${['PROCESSOR_ARCHITECTURE', 'PROCESSOR_ARCHITEW6432'].filter(key => Object.hasOwn(extra, key)).map(key => `$env:${key}='${extra[key].replaceAll("'", "''")}'`).join('\n')}
 ${extra.CLAWGOD_FAIL_LAUNCHER ? '$lock=[IO.File]::Open((Join-Path $env:USERPROFILE ".local\\bin\\clawgod.cmd"),"Open","Read","Read")' : ''}
 & ([scriptblock]::Create([IO.File]::ReadAllText($env:CLAWGOD_FIXTURE_INSTALLER))) ${args.map(arg => `'${arg.replaceAll("'", "''")}'`).join(' ')}
 `;

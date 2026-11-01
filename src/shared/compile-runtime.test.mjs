@@ -17,7 +17,7 @@ const run = (command, args) => {
 };
 try {
   mkdirSync(join(dir, 'bunfs'), { recursive: true });
-  for (const name of ['compile-runtime.mjs', 'cli.cjs', 'runtime-helpers.cjs', 'feature-gates.cjs', 'lean-mode.cjs', 'ast-patches.mjs', 'acorn.mjs']) {
+  for (const name of ['compile-runtime.mjs', 'cli.cjs', 'runtime-helpers.cjs', 'feature-gates.cjs', 'lean-mode.cjs', 'openai-proxy.cjs', 'ast-patches.mjs', 'acorn.mjs']) {
     copyFileSync(new URL('./' + name, import.meta.url), join(dir, name));
   }
   writeFileSync(join(dir, 'bun-ant-shim.cjs'), '');
