@@ -9803,10 +9803,10 @@ export function scanPentestPatches(code, upstreamRanges = [], readTree = () => p
   };
   const trimExcludes = anchored || trimCandidate ? scanRuntimeTrimming(tree, code, results, edit) : [];
   if (anchored) {
-    const permissionBodies = scanPermissionBypasses(tree, code, results, edit, upstreamRanges);
     scanCombinerWrap(tree, code, results, edit);
-    scanPromptTextErase(tree, code, results, edit, permissionBodies, trimExcludes);
     scanWarningSuppression(tree, code, results, edit);
+    const permissionBodies = scanPermissionBypasses(tree, code, results, edit, upstreamRanges);
+    scanPromptTextErase(tree, code, results, edit, permissionBodies, trimExcludes);
   }
   scanRuntimeGates(tree, code, results, edit, upstreamRanges);
   return results;
@@ -10420,12 +10420,10 @@ function scanPermissionBypasses(tree, code, results, edit, upstreamRanges = []) 
     }
 
     // (h) Subagent / auto-mode review gates
-    // NOTE: 'auto mode'/'autoMode' removed \u2014 they collide with /loop scheduling
-    // prompts ("tasks autonomously"). 'handback' retained (specific to subagent
-    // report flow, not loop).
+    // Match review diagnostics, not generic subagent or handback references.
     const reviewSignals = [
       'SECURITY WARNING', 'UNREVIEWED', 'safety safeguard',
-      'subagent', 'handback', 'Handoff classifier',
+      'Handoff classifier',
     ];
     if (reviewSignals.some(sig => body.includes(sig)) && node.async) {
       const hasReturn = node.body.type === 'BlockStatement' &&
