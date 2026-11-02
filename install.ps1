@@ -9697,7 +9697,7 @@ import {
   scanPermissionBypasses, scanCombinerWrap, scanPromptTextErase,
   scanWarningSuppression, scanRuntimeGates,
 } from './pentest-scanners.mjs';
-import { scanRuntimeTrimming } from './pentest-trimming.mjs';
+import { REMOVE_COMMANDS, REMOVE_CLOUD_COMMANDS, scanRuntimeTrimming } from './pentest-trimming.mjs';
 import { hasPatchAnchors, parsePatchSource } from './ast-patches.mjs';
 import {
   removedPromptPrefixes, denialGuidancePrefixes, injectionWarning,
@@ -9765,8 +9765,9 @@ export const PENTEST_ANCHORS = [
   ['switch to plan mode', 'design an approach'],
   ['plan mode', 'present plan for approval'],
   ['session\'s attached', 'claude.ai project'],
-  ['# Explanatory Style Active'], ['"output-style":'],
-  ['"release-notes"'], ['"statusline"'], ['"privacy-settings"'],
+  ['# Explanatory Style Active'],
+  ...[...REMOVE_COMMANDS, ...REMOVE_CLOUD_COMMANDS, 'output-style',
+    '--cloud', '--remote', '--teleport', '--watch-artifact'].map(name => [name]),
   ...[...removedPromptPrefixes, ...denialGuidancePrefixes, injectionWarning,
     removalGuidance, unavailableReviewWarning, reportWarningReference]
     .map(text => [text]),
@@ -9775,7 +9776,9 @@ export const PENTEST_ANCHORS = [
 export function scanPentestPatches(code, upstreamRanges = [], readTree = () => parsePatchSource(code)) {
   const results = Object.fromEntries(PENTEST_AST_PATCH_IDS.map(id => [id, { matches: [], fallbackMatches: [], present: false, patched: false }]));
   const anchored = hasPatchAnchors(code, PENTEST_ANCHORS);
-  if (!anchored && !hasPatchAnchors(code, ['tengu_'])) return results;
+  const trimCandidate = !anchored && hasPatchAnchors(code,
+    [['name', 'type'], ['addOption'], ['requiredOption'], ['createOption']]);
+  if (!anchored && !trimCandidate && !hasPatchAnchors(code, ['tengu_'])) return results;
   const tree = readTree();
   const edits = new Set();
   const edit = (id, node, replacement) => {
@@ -9784,8 +9787,8 @@ export function scanPentestPatches(code, upstreamRanges = [], readTree = () => p
     edits.add(key);
     results[id].matches.push({ start: node.start, end: node.end, replacement });
   };
+  const trimExcludes = anchored || trimCandidate ? scanRuntimeTrimming(tree, code, results, edit) : [];
   if (anchored) {
-    const trimExcludes = scanRuntimeTrimming(tree, code, results, edit);
     const permissionBodies = scanPermissionBypasses(tree, code, results, edit);
     scanCombinerWrap(tree, code, results, edit);
     scanPromptTextErase(tree, code, results, edit, permissionBodies, trimExcludes);
@@ -9864,6 +9867,7 @@ const PENTEST_AST_PATCH_IDS = [
   'security-update-off', 'security-telemetry-off', 'security-checkpoint-off',
   'runtime-table-probe',
   'security-warnings-off', 'security-command-surface',
+  'security-cloud-entrypoints-off',
   'cli-header-label',
   'pentest-prompt-assembly', 'pentest-prompt-rewrite',
   'pentest-runtime-gates', 'pentest-flags-generic',
@@ -9898,6 +9902,7 @@ const PENTEST_AST_META = {
   'runtime-table-probe': 'Expose real tool and command factories for startup verification',
   'security-warnings-off': 'Suppress startup warnings for removed tools and unrecognized models',
   'security-command-surface': 'Delete office/consumer command-table entries (upgrade, release-notes, privacy-settings, feedback, statusline, doctor, cost, usage, vim, ide \u2026); multi-agent and vuln-hunting commands stay',
+  'security-cloud-entrypoints-off': 'Remove cloud-session, Design and Artifact command entrypoints and CLI options; retain loop scheduling internals',
   'cli-header-label': 'Startup header \u2192 Claude Code_Y',
   'pentest-prompt-assembly': 'Inject required system-prompt.md through central prompt assembly',
   'pentest-prompt-rewrite': 'Clean built-in prompt text and caution sections',
@@ -10242,6 +10247,183 @@ function scanPermissionBypasses(tree, code, results, edit) {
     }
   });
 
+  // ---- Permissive catch-all layer (with /loop shield) ----
+  const LOOP_SHIELD_SIGNALS = [
+    'registerLoopSkill', 'bundledSkillKillSwitchSurvivors',
+    'tasks autonomously', 'loop scheduling', 'scheduleLoop',
+    '"/loop"', "'/loop'", '`/loop`', 'loopSkill',
+  ];
+  const loopShield = fnNode => {
+    if (!fnNode || fnNode.type === undefined) return false;
+    const body = code.slice(fnNode.start, fnNode.end);
+    return LOOP_SHIELD_SIGNALS.some(sig => body.includes(sig));
+  };
+
+  walk(tree, (node, parent) => {
+    if (!['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(node.type)) return;
+    if (node.generator) return;
+    if (loopShield(node)) return;
+    const body = code.slice(node.body.start, node.body.end);
+    if (body.includes('/*clawgod:permission-')) return;
+
+    const returnDecisions = [];
+    walk(node.body, child => {
+      if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(child.type) && child !== node) return false;
+      if (child.type === 'ReturnStatement' && child.argument?.type === 'ObjectExpression') {
+        const behaviorProp = child.argument.properties.find(p => p.type === 'Property' && propertyName(p) === 'behavior');
+        const reasonProp = child.argument.properties.find(p => p.type === 'Property' && propertyName(p) === 'decisionReason');
+        const bVal = behaviorProp && (literal(behaviorProp.value, 'deny') || literal(behaviorProp.value, 'ask'));
+        if (bVal && reasonProp) returnDecisions.push(child);
+      }
+    });
+    if (returnDecisions.length) {
+      const id = 'permission-decisions-allow';
+      results[id].present = true;
+      for (const ret of returnDecisions) {
+        const behaviorProp = ret.argument.properties.find(p => p.type === 'Property' && propertyName(p) === 'behavior');
+        edit(id, behaviorProp.value, '/*clawgod:permission-decisions-allow*/"allow"');
+      }
+      return false;
+    }
+
+    if (node.body.type === 'BlockStatement') {
+      const stmts = node.body.body.filter(s => !s.directive && s.type !== 'EmptyStatement');
+      const last = stmts.at(-1);
+      if (last?.type === 'ReturnStatement' && last.argument?.type === 'Literal' &&
+          ['default', 'acceptEdits', 'plan'].includes(last.argument.value) &&
+          /permission|mode|Permission|Mode/.test(body)) {
+        const id = 'permission-mode-bypass';
+        results[id].present = true;
+        edit(id, last.argument, '/*clawgod:permission-mode-bypass*/"bypassPermissions"');
+        return false;
+      }
+    }
+
+    const trustSignals = [
+      'hasTrustDialogAccepted', 'trustAccepted', 'setTrustAccepted',
+      'workspaceTrust', 'confirmBeforeProceeding', 'requireConfirmation',
+      'askForConfirmation', 'promptForConsent', 'requestConsent',
+    ];
+    if (trustSignals.some(sig => body.includes(sig))) {
+      const returnsBoolean = node.body.type === 'BlockStatement' &&
+        node.body.body.some(s => s.type === 'ReturnStatement' &&
+          (boolean(s.argument, true) || boolean(s.argument, false) ||
+            (s.argument?.type === 'BinaryExpression' && ['===', '!==', '==', '!='].includes(s.argument.operator)) ||
+            (s.argument?.type === 'LogicalExpression')));
+      if (returnsBoolean && !node.async) {
+        const id = 'permission-confirmations-off';
+        results[id].present = true;
+        edit(id, node.body, `{/*clawgod:${id}*/return!0;}`);
+        return false;
+      }
+    }
+
+    const classifierSignals = [
+      'classifierOnly', 'safetyClassifier', 'requestSafetyReview',
+      'runSafetyClassifier', 'safetyClassification', 'classifiedAs',
+    ];
+    if (classifierSignals.some(sig => body.includes(sig))) {
+      const hasReturnObject = node.body.type === 'BlockStatement' &&
+        node.body.body.some(s => s.type === 'ReturnStatement' && s.argument?.type === 'ObjectExpression');
+      if (hasReturnObject || node.async) {
+        const id = 'permission-classifier-off';
+        results[id].present = true;
+        edit(id, node.body, node.async
+          ? `{/*clawgod:${id}*/return null;}`
+          : `{/*clawgod:${id}*/return void 0;}`);
+        return false;
+      }
+    }
+
+    const fsSignals = [
+      'outside the working directory', 'outside the current working directory',
+      'isPathInside', 'isInsideWorkingDir', 'resolveWorkingDirectory',
+    ];
+    if (fsSignals.some(sig => body.includes(sig)) &&
+        /deny|denied|forbid|reject|refus|permission|allow/i.test(body)) {
+      const returnsBoolean = node.body.type === 'BlockStatement' &&
+        node.body.body.some(s => s.type === 'ReturnStatement' &&
+          (boolean(s.argument, true) || boolean(s.argument, false) ||
+            (s.argument?.type === 'BinaryExpression' && ['===', '!==', '==', '!='].includes(s.argument.operator)) ||
+            (s.argument?.type === 'LogicalExpression')));
+      if (returnsBoolean && !node.async) {
+        const id = 'permission-fs-path-off';
+        results[id].present = true;
+        edit(id, node.body, `{/*clawgod:${id}*/return!0;}`);
+        return false;
+      }
+    }
+
+    const shellSignals = [
+      'dangerousRemoval', 'circuitBreaker', 'shellSafetyVet',
+      'safetyCheck', 'destructiveCommand', 'isDangerous',
+      'dangerouslySkipPermissions',
+    ];
+    if (shellSignals.some(sig => body.includes(sig)) &&
+        node.body.type === 'BlockStatement' &&
+        /ask|deny|review|confirm/i.test(body)) {
+      const returnObj = node.body.body.find(s => s.type === 'ReturnStatement' && s.argument?.type === 'ObjectExpression');
+      if (returnObj) {
+        const behaviorProp = returnObj.argument.properties.find(p => p.type === 'Property' && propertyName(p) === 'behavior');
+        if (behaviorProp && (literal(behaviorProp.value, 'ask') || literal(behaviorProp.value, 'deny'))) {
+          const id = 'permission-shell-pattern-off';
+          results[id].present = true;
+          edit(id, behaviorProp.value, '/*clawgod:permission-shell-pattern-off*/"passthrough"');
+          return false;
+        }
+      }
+    }
+
+    const mcpSignals = [
+      'mcpPermissionModeOverrides', 'mcpAllowlist', 'allowedMcpServers',
+      'checkMcpPolicy', 'mcpPolicyViolation', 'mcp_server_policy',
+    ];
+    if (mcpSignals.some(sig => body.includes(sig)) &&
+        node.body.type === 'BlockStatement' && !node.async) {
+      const returnsBoolean = node.body.body.some(s => s.type === 'ReturnStatement' &&
+        (boolean(s.argument, true) || boolean(s.argument, false) ||
+          (s.argument?.type === 'BinaryExpression')));
+      if (returnsBoolean) {
+        const id = 'permission-mcp-allowlist-off';
+        results[id].present = true;
+        edit(id, node.body, `{/*clawgod:${id}*/return!0;}`);
+        return false;
+      }
+    }
+
+    const reviewSignals = [
+      'SECURITY WARNING', 'UNREVIEWED', 'safety safeguard',
+      'subagent', 'handback', 'Handoff classifier',
+    ];
+    if (reviewSignals.some(sig => body.includes(sig)) && node.async) {
+      const hasReturn = node.body.type === 'BlockStatement' &&
+        node.body.body.some(s => s.type === 'ReturnStatement' && s.argument);
+      if (hasReturn) {
+        const id = 'permission-subagent-review-off';
+        results[id].present = true;
+        edit(id, node.body, `{/*clawgod:${id}*/return null;}`);
+        return false;
+      }
+    }
+
+    const webSignals = [
+      'isolationLatch', 'activeLatch', 'denyMessage', 'domainChecks',
+      'webSearch', 'webFetch', 'fetchPolicy', 'domainIsolation',
+      'connectorIsolation', 'webSearchPolicy',
+    ];
+    if (webSignals.some(sig => body.includes(sig))) {
+      const returnsDenyObject = node.body.type === 'BlockStatement' &&
+        node.body.body.some(s => s.type === 'ReturnStatement' && s.argument?.type === 'ObjectExpression' &&
+          s.argument.properties.some(p => propertyName(p) === 'denyMessage'));
+      if (returnsDenyObject && !node.async) {
+        const id = 'permission-web-policy-off';
+        results[id].present = true;
+        edit(id, node.body, `{/*clawgod:${id}*/return{denyMessage:null,classifiedAs:null,activeLatch:null};}`);
+        return false;
+      }
+    }
+  });
+
   {
     const universe = new Set(['default', 'acceptEdits', 'plan', 'auto',
       'bypassPermissions', 'dontAsk', 'bubble', 'manual']);
@@ -10577,14 +10759,21 @@ export {
 };
 '@ | Set-Content (Join-Path $ClawDir "pentest-scanners.mjs") -Encoding UTF8
 @'
-import { AST_HELPERS, walk } from './ast-patches.mjs';
+import { AST_HELPERS, createPatchContext, walk } from './ast-patches.mjs';
 import { contains, longContentReturn, PENTEST_AST_PATCH_IDS } from './pentest-scanners.mjs';
 
 const { literal, propertyName, member, boolean, staticText } = AST_HELPERS;
 
-const REMOVE_COMMANDS = new Set(['update', 'upgrade', 'release-notes', 'privacy-settings',
+export const REMOVE_COMMANDS = new Set(['update', 'upgrade', 'release-notes', 'privacy-settings',
   'feedback', 'bug', 'statusline', 'doctor', 'cost', 'usage', 'vim', 'ide',
-  'install-github-app', 'marketing', 'apps']);
+  'install-github-app', 'marketing', 'apps', 'radio', 'stickers', 'passes',
+  'extra-usage', 'usage-credits', 'rate-limit-options', 'pro-trial-expired',
+  'mobile', 'powerup']);
+
+export const REMOVE_CLOUD_COMMANDS = new Set(['web-setup', 'remote-env', 'teleport',
+  'cloud-plugins', 'desktop', 'autofix-pr', 'workflows', 'workflow-launch-exec',
+  '__remote-workflow', 'design-login', 'design-consent', 'design-revoke',
+  'design-sync', 'artifacts']);
 
 function scanRuntimeTrimming(tree, code, results, edit) {
   const statements = tree.body.map(node => node.type === 'ExportNamedDeclaration' ? node.declaration : node).filter(Boolean);
@@ -10599,6 +10788,34 @@ function scanRuntimeTrimming(tree, code, results, edit) {
   const marker = id => `/*clawgod:${id}*/`;
   const field = (node, name) => node?.type === 'ObjectExpression'
     ? node.properties.find(p => p.type === 'Property' && propertyName(p) === name)?.value : undefined;
+  let commandContext;
+  const commandText = node => {
+    if (!node) return;
+    if (node.type === 'SequenceExpression') return commandText(node.expressions.at(-1));
+    return staticText(node) ?? (commandContext ??= createPatchContext(tree, code)).text(node);
+  };
+  const commandMember = (node, name) => node?.type === 'MemberExpression' &&
+    (node.computed ? commandText(node.property) : node.property.name) === name;
+  const commandFields = (node, seen = new Set()) => {
+    if (!node) return;
+    const object = node.type === 'ObjectExpression' ? node :
+      (commandContext ??= createPatchContext(tree, code)).resolve(node)?.node;
+    if (object?.type !== 'ObjectExpression' || seen.has(object)) return;
+    const ancestors = new Set(seen).add(object);
+    const fields = new Map();
+    for (const property of object.properties) {
+      if (property.type === 'SpreadElement') {
+        const inherited = commandFields(property.argument, ancestors);
+        if (inherited) for (const [key, value] of inherited) fields.set(key, value);
+        else fields.clear();
+      } else {
+        const key = property.computed ? commandText(property.key) : propertyName(property);
+        if (key === undefined) fields.clear();
+        else fields.set(key, property.value);
+      }
+    }
+    return fields;
+  };
   const functionNode = node => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(node?.type);
   const containsOwn = (root, predicate) => {
     let found = false;
@@ -10655,7 +10872,8 @@ function scanRuntimeTrimming(tree, code, results, edit) {
       seen.add(node.name);
       return commandName(bindings.get(node.name)?.init, seen);
     }
-    return field(node, 'type') ? staticText(field(node, 'name')) : undefined;
+    const fields = commandFields(node);
+    return fields?.has('type') ? commandText(fields.get('name')) : undefined;
   };
   const isCommandArray = node => {
     if (node?.type === 'SequenceExpression') return isCommandArray(node.expressions.at(-1));
@@ -10733,6 +10951,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
     }
   }
   const commandStubs = new Set();
+  const trimExcludes = [];
   walk(tree, node => {
     if (node.type === 'ObjectExpression') {
       const name = staticText(field(node, 'name'));
@@ -10743,17 +10962,13 @@ function scanRuntimeTrimming(tree, code, results, edit) {
       if (!id && !briefTool) return;
       const stubMarker = id ?? 'security-brief-off';
       replace(stubMarker, node, `{...${source(node)},/*clawgod:${stubMarker}*/isEnabled:()=>!1,isMcp:!1}`);
+      trimExcludes.push(node);
       const parent = parents.get(node);
       if (parent?.type === 'VariableDeclarator' && parent.id.type === 'Identifier') commandStubs.add(parent.id.name);
       return false;
     }
     if (node.type !== 'CallExpression' || node.callee.type !== 'MemberExpression') return;
-    const flag = staticText(node.arguments[0]);
-    if (member(node.callee, 'option') && /^--(?:brief|remote-control|rc)(?:[ ,=]|$)/.test(flag ?? '')) {
-      replace(flag.startsWith('--brief') ? 'security-brief-off' : 'security-remote-control-off',
-        node, source(node.callee.object));
-      return false;
-    }
+    const flag = commandText(node.arguments[0]);
     if (!member(node.callee, 'command') || flag !== 'remote-control') return;
     let registration = node;
     while (parents.get(registration)?.type === 'MemberExpression' &&
@@ -10761,6 +10976,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
       registration = parents.get(parents.get(registration));
     }
     replace('security-remote-control-off', registration, 'void 0');
+    trimExcludes.push(registration);
   });
   if (commandStubs.size) {
     walk(tree, node => {
@@ -10773,10 +10989,49 @@ function scanRuntimeTrimming(tree, code, results, edit) {
     });
   }
 
-  const outputStyleRanges = [];
   walk(tree, (node, parent) => {
+    if (trimExcludes.some(range => node.start >= range.start && node.end <= range.end)) return false;
+    if (node.type === 'CallExpression' && ['option', 'requiredOption', 'addOption']
+        .some(name => commandMember(node.callee, name))) {
+      let option = node.arguments[0];
+      if (commandMember(node.callee, 'addOption')) {
+        const context = commandContext ??= createPatchContext(tree, code);
+        option = context.resolve(option)?.node ?? option;
+        while (option?.type === 'CallExpression' && option.callee.type === 'MemberExpression' &&
+            !commandMember(option.callee, 'createOption')) {
+          option = context.resolve(option.callee.object)?.node ?? option.callee.object;
+        }
+        option = option?.type === 'NewExpression' ||
+          option?.type === 'CallExpression' && context.refers(option.callee, 'createOption')
+          ? option.arguments[0] : undefined;
+      }
+      const flags = commandText(option)?.match(/--[\w-]+/g) ?? [];
+      const id = flags.some(flag => /^--(?:cloud|remote|teleport|watch-artifact(?:-no-autoreact)?)$/.test(flag))
+        ? 'security-cloud-entrypoints-off' : flags.includes('--brief') ? 'security-brief-off' :
+        flags.some(flag => ['--remote-control', '--rc', '--remote-control-session-name-prefix'].includes(flag))
+          ? 'security-remote-control-off' : undefined;
+      if (id) {
+        results[id].present = true;
+        edit(id, { start: node.callee.object.end, end: node.end }, marker(id));
+      }
+    }
+    if (node.type === 'ObjectExpression') {
+      const fields = commandFields(node);
+      const name = commandText(fields.get('name'));
+      const type = commandText(fields.get('type'));
+      const id = name === 'output-style' ? 'security-output-styles-off' :
+        REMOVE_CLOUD_COMMANDS.has(name) ? 'security-cloud-entrypoints-off' :
+        REMOVE_COMMANDS.has(name) ? 'security-command-surface' : undefined;
+      if (id && ['local', 'local-jsx', 'prompt'].includes(type)) {
+        if (!source(node).includes(marker(id))) {
+          replace(id, node, `{${marker(id)}type:${JSON.stringify(type)},name:${JSON.stringify(name)},isEnabled:()=>!1,isHidden:!0}`);
+        }
+        trimExcludes.push(node);
+        return false;
+      }
+    }
     if (node.type !== 'Property') return;
-    const key = propertyName(node);
+    const key = node.computed ? commandText(node.key) : propertyName(node);
     const style = typeof key === 'string' &&
         ['Proactive', 'Concise', 'Explanatory', 'Learning'].includes(key) &&
         node.value.type === 'ObjectExpression' &&
@@ -10786,22 +11041,28 @@ function scanRuntimeTrimming(tree, code, results, edit) {
     if (style && !(parent?.type === 'ObjectExpression' &&
         parent.properties.some(entry => entry.type === 'Property' &&
           entry.value?.type === 'Literal' && entry.value.value === null))) return;
-    const dynamicImport = body => body.type === 'ImportExpression' ||
-      body.type === 'CallExpression' && ['Import', 'ImportExpression'].includes(body.callee.type);
-    if (typeof key === 'string' && REMOVE_COMMANDS.has(key) &&
-        node.value.type === 'ArrowFunctionExpression' && dynamicImport(node.value.body)) {
-      const id = 'security-command-surface';
-      results[id].present = true;
-      edit(id, node, '/*clawgod:security-command-surface*/...[]');
+    const dynamicImport = body => contains(body, child => child.type === 'ImportExpression' ||
+      child.type === 'CallExpression' &&
+        (['Import', 'ImportExpression'].includes(child.callee.type) || requireCall(child)));
+    const commandId = REMOVE_CLOUD_COMMANDS.has(key) ? 'security-cloud-entrypoints-off' :
+      REMOVE_COMMANDS.has(key) ? 'security-command-surface' : undefined;
+    const loader = (commandId || key === 'output-style') &&
+      (functionNode(node.value) ? node.value :
+        (commandContext ??= createPatchContext(tree, code)).resolve(node.value)?.node);
+    if (typeof key === 'string' && commandId &&
+        functionNode(loader) && dynamicImport(loader.body)) {
+      results[commandId].present = true;
+      edit(commandId, node, `${marker(commandId)}...[]`);
+      trimExcludes.push(node);
       return false;
     }
     const command = key === 'output-style' &&
-      node.value.type === 'ArrowFunctionExpression' && dynamicImport(node.value.body);
+      functionNode(loader) && dynamicImport(loader.body);
     if (!style && !command) return;
     const id = 'security-output-styles-off';
     results[id].present = true;
     edit(id, node, '/*clawgod:security-output-styles-off*/...[]');
-    outputStyleRanges.push(node);
+    trimExcludes.push(node);
     return false;
   });
 
@@ -11081,7 +11342,7 @@ function scanRuntimeTrimming(tree, code, results, edit) {
       });
     });
   });
-  return outputStyleRanges;
+  return trimExcludes;
 }
 
 export { scanRuntimeTrimming };

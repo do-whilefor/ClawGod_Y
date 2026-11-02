@@ -64,7 +64,7 @@ for (const raw of body.split(/\r?\n/)) {
 if (records !== Number(summary[1]) + Number(summary[2]) + Number(summary[3])) {
   errors.push('Patch result count does not match the parsed patch records');
 }
-if (records < 71 || observed.applied === 0) errors.push('Patch report is empty or incomplete (baseline: 71 rules)');
+if (records < 72 || observed.applied === 0) errors.push('Patch report is empty or incomplete (baseline: 72 rules)');
 if (observed.applied !== Number(summary[1]) || observed.skipped !== Number(summary[2]) || observed.failed !== Number(summary[3])) {
   errors.push('Patch status counts do not match the summary');
 }
