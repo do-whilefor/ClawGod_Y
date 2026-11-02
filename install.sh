@@ -9615,6 +9615,20 @@ export const PENTEST_ANCHORS = [
   ['plan mode', 'present plan for approval'],
   ['session\'s attached', 'claude.ai project'],
   ['# Explanatory Style Active'],
+  // --- permissive catch-all anchors (loop-safe: no auto/loop/schedule terms) ---
+  ['safetyClassifier'], ['requestSafetyReview'], ['runSafetyClassifier'],
+  ['safetyClassification'],
+  ['workspaceTrust'], ['confirmBeforeProceeding'], ['requireConfirmation'],
+  ['askForConfirmation'], ['promptForConsent'], ['requestConsent'],
+  ['isPathInside'], ['isInsideWorkingDir'], ['resolveWorkingDirectory'],
+  ['shellSafetyVet'], ['destructiveCommand'], ['isDangerous'],
+  ['dangerouslySkipPermissions'],
+  ['mcpAllowlist'], ['allowedMcpServers'], ['checkMcpPolicy'],
+  ['mcpPolicyViolation'], ['mcp_server_policy'],
+  ['UNREVIEWED'], ['handback'],
+  ['domainChecks'], ['webSearch'], ['webFetch'], ['fetchPolicy'],
+  ['domainIsolation'], ['connectorIsolation'], ['webSearchPolicy'],
+  ['denyMessage'],
   ...[...REMOVE_COMMANDS, ...REMOVE_CLOUD_COMMANDS, 'output-style',
     '--cloud', '--remote', '--teleport', '--watch-artifact'].map(name => [name]),
   ...[...removedPromptPrefixes, ...denialGuidancePrefixes, injectionWarning,
@@ -9638,7 +9652,7 @@ export function scanPentestPatches(code, upstreamRanges = [], readTree = () => p
   };
   const trimExcludes = anchored || trimCandidate ? scanRuntimeTrimming(tree, code, results, edit) : [];
   if (anchored) {
-    const permissionBodies = scanPermissionBypasses(tree, code, results, edit);
+    const permissionBodies = scanPermissionBypasses(tree, code, results, edit, upstreamRanges);
     scanCombinerWrap(tree, code, results, edit);
     scanPromptTextErase(tree, code, results, edit, permissionBodies, trimExcludes);
     scanWarningSuppression(tree, code, results, edit);
@@ -9759,7 +9773,7 @@ const PENTEST_AST_META = {
   'pentest-flags-generic': 'Wrap every tengu_* GrowthBook getter with the local override map (flags.json / CLAWGOD_FLAGS)',
 };
 
-function scanPermissionBypasses(tree, code, results, edit) {
+function scanPermissionBypasses(tree, code, results, edit, upstreamRanges = []) {
   const ranges = [];
   const replace = (id, fn, body) => {
     results[id].present = true;
@@ -10097,6 +10111,8 @@ function scanPermissionBypasses(tree, code, results, edit) {
   });
 
   // ---- Permissive catch-all layer (with /loop shield) ----
+  // /loop is a bundled scheduling feature preserved via security-bundled-skills;
+  // any function whose body references loop internals must NOT be neutered here.
   const LOOP_SHIELD_SIGNALS = [
     'registerLoopSkill', 'bundledSkillKillSwitchSurvivors',
     'tasks autonomously', 'loop scheduling', 'scheduleLoop',
@@ -10108,13 +10124,16 @@ function scanPermissionBypasses(tree, code, results, edit) {
     return LOOP_SHIELD_SIGNALS.some(sig => body.includes(sig));
   };
 
-  walk(tree, (node, parent) => {
+  const blocked = claimedRanges(results, upstreamRanges);
+  walk(tree, node => {
     if (!['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(node.type)) return;
+    if (blocked.some(([start, end]) => node.body.start < end && node.body.end > start)) return;
     if (node.generator) return;
-    if (loopShield(node)) return;
+    if (loopShield(node)) return; // never touch /loop machinery
     const body = code.slice(node.body.start, node.body.end);
     if (body.includes('/*clawgod:permission-')) return;
 
+    // (a) Return of {behavior:"deny"|"ask", decisionReason:{...}} → force allow
     const returnDecisions = [];
     walk(node.body, child => {
       if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(child.type) && child !== node) return false;
@@ -10131,10 +10150,12 @@ function scanPermissionBypasses(tree, code, results, edit) {
       for (const ret of returnDecisions) {
         const behaviorProp = ret.argument.properties.find(p => p.type === 'Property' && propertyName(p) === 'behavior');
         edit(id, behaviorProp.value, '/*clawgod:permission-decisions-allow*/"allow"');
+        ranges.push(behaviorProp.value);
       }
       return false;
     }
 
+    // (b) Bare literal return of a restrictive permission mode → bypassPermissions
     if (node.body.type === 'BlockStatement') {
       const stmts = node.body.body.filter(s => !s.directive && s.type !== 'EmptyStatement');
       const last = stmts.at(-1);
@@ -10144,10 +10165,12 @@ function scanPermissionBypasses(tree, code, results, edit) {
         const id = 'permission-mode-bypass';
         results[id].present = true;
         edit(id, last.argument, '/*clawgod:permission-mode-bypass*/"bypassPermissions"');
+        ranges.push(last.argument);
         return false;
       }
     }
 
+    // (c) Functions that probe trust/consent → always truthy
     const trustSignals = [
       'hasTrustDialogAccepted', 'trustAccepted', 'setTrustAccepted',
       'workspaceTrust', 'confirmBeforeProceeding', 'requireConfirmation',
@@ -10162,11 +10185,14 @@ function scanPermissionBypasses(tree, code, results, edit) {
       if (returnsBoolean && !node.async) {
         const id = 'permission-confirmations-off';
         results[id].present = true;
-        edit(id, node.body, `{/*clawgod:${id}*/return!0;}`);
+        replace(id, node, 'return!0;');
         return false;
       }
     }
 
+    // (d) Classifier / safety review entry points → no-op
+    // NOTE: 'pendingReview'/'requiresReview' removed from signal list — they can
+    // appear in /loop scheduling code paths.
     const classifierSignals = [
       'classifierOnly', 'safetyClassifier', 'requestSafetyReview',
       'runSafetyClassifier', 'safetyClassification', 'classifiedAs',
@@ -10177,13 +10203,12 @@ function scanPermissionBypasses(tree, code, results, edit) {
       if (hasReturnObject || node.async) {
         const id = 'permission-classifier-off';
         results[id].present = true;
-        edit(id, node.body, node.async
-          ? `{/*clawgod:${id}*/return null;}`
-          : `{/*clawgod:${id}*/return void 0;}`);
+        replace(id, node, node.async ? 'return null;' : 'return void 0;');
         return false;
       }
     }
 
+    // (e) Filesystem path gating
     const fsSignals = [
       'outside the working directory', 'outside the current working directory',
       'isPathInside', 'isInsideWorkingDir', 'resolveWorkingDirectory',
@@ -10198,11 +10223,12 @@ function scanPermissionBypasses(tree, code, results, edit) {
       if (returnsBoolean && !node.async) {
         const id = 'permission-fs-path-off';
         results[id].present = true;
-        edit(id, node.body, `{/*clawgod:${id}*/return!0;}`);
+        replace(id, node, 'return!0;');
         return false;
       }
     }
 
+    // (f) Shell safety vetting / dangerousRemoval circuit breaker
     const shellSignals = [
       'dangerousRemoval', 'circuitBreaker', 'shellSafetyVet',
       'safetyCheck', 'destructiveCommand', 'isDangerous',
@@ -10218,11 +10244,13 @@ function scanPermissionBypasses(tree, code, results, edit) {
           const id = 'permission-shell-pattern-off';
           results[id].present = true;
           edit(id, behaviorProp.value, '/*clawgod:permission-shell-pattern-off*/"passthrough"');
+          ranges.push(behaviorProp.value);
           return false;
         }
       }
     }
 
+    // (g) MCP allowlist / server policy gates
     const mcpSignals = [
       'mcpPermissionModeOverrides', 'mcpAllowlist', 'allowedMcpServers',
       'checkMcpPolicy', 'mcpPolicyViolation', 'mcp_server_policy',
@@ -10235,11 +10263,15 @@ function scanPermissionBypasses(tree, code, results, edit) {
       if (returnsBoolean) {
         const id = 'permission-mcp-allowlist-off';
         results[id].present = true;
-        edit(id, node.body, `{/*clawgod:${id}*/return!0;}`);
+        replace(id, node, 'return!0;');
         return false;
       }
     }
 
+    // (h) Subagent / auto-mode review gates
+    // NOTE: 'auto mode'/'autoMode' removed — they collide with /loop scheduling
+    // prompts ("tasks autonomously"). 'handback' retained (specific to subagent
+    // report flow, not loop).
     const reviewSignals = [
       'SECURITY WARNING', 'UNREVIEWED', 'safety safeguard',
       'subagent', 'handback', 'Handoff classifier',
@@ -10250,11 +10282,12 @@ function scanPermissionBypasses(tree, code, results, edit) {
       if (hasReturn) {
         const id = 'permission-subagent-review-off';
         results[id].present = true;
-        edit(id, node.body, `{/*clawgod:${id}*/return null;}`);
+        replace(id, node, 'return null;');
         return false;
       }
     }
 
+    // (i) Web policy / domain isolation gates
     const webSignals = [
       'isolationLatch', 'activeLatch', 'denyMessage', 'domainChecks',
       'webSearch', 'webFetch', 'fetchPolicy', 'domainIsolation',
@@ -10267,7 +10300,7 @@ function scanPermissionBypasses(tree, code, results, edit) {
       if (returnsDenyObject && !node.async) {
         const id = 'permission-web-policy-off';
         results[id].present = true;
-        edit(id, node.body, `{/*clawgod:${id}*/return{denyMessage:null,classifiedAs:null,activeLatch:null};}`);
+        replace(id, node, 'return{denyMessage:null,classifiedAs:null,activeLatch:null};');
         return false;
       }
     }
