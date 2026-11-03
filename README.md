@@ -76,7 +76,7 @@ For an OpenAI Chat Completions-compatible service, set `protocol` to `openai-cha
 
 ### Uninstallation
 
-```text
+```bash
 clawgod --uninstall
 ```
 

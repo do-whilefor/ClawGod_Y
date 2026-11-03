@@ -76,7 +76,7 @@ curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.
 
 ### 卸载
 
-```text
+```bash
 clawgod --uninstall
 ```
 
