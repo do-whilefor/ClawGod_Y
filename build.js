@@ -7,6 +7,7 @@ const {
   writeFileSync,
 } = require('node:fs');
 const { join } = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { spawnSync } = require('node:child_process');
 
 const ROOT = __dirname;
@@ -23,7 +24,7 @@ const escapeNonAscii = (content) => content.replace(
 const FEATURES_META_MARKER = 'const CLAWGOD_FEATURES_META = {};';
 
 function featuresMeta() {
-  const registryUrl = new URL(`file://${join(SOURCE_ROOT, 'shared/patch-registry.mjs')}`).href;
+  const registryUrl = pathToFileURL(join(SOURCE_ROOT, 'shared/patch-registry.mjs')).href;
   const result = spawnSync(process.execPath, ['-e',
     `import(${JSON.stringify(registryUrl)}).then(m=>console.log(JSON.stringify(m.featuresMeta())))`], {
     encoding: 'utf8',
