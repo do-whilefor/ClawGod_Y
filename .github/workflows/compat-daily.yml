@@ -85,6 +85,12 @@ jobs:
       - name: Run patch semantic tests
         run: node src/shared/patch.test.mjs
 
+      - name: Run pentest patch regression tests
+        run: node src/shared/pentest-patches.test.mjs
+
+      - name: Run pentest graph pruning regression tests
+        run: node src/shared/pentest-pruner.test.mjs
+
       - name: Run clean source and repatch regression tests
         run: node src/shared/source-backup.test.mjs
 

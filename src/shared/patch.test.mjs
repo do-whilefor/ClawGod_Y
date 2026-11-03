@@ -10,6 +10,11 @@ import { createServer, request } from 'node:http';
 import { scanPentestPatches } from './pentest-patches.mjs';
 import { applyAstEdits } from './ast-patches.mjs';
 
+const patchFiles = [
+  'patch.mjs', 'patch-registry.mjs', 'ast-patches.mjs', 'acorn.mjs', 'pentest-patches.mjs',
+  'pentest-scanners.mjs', 'pentest-trimming.mjs', 'pentest-policy-text.mjs', 'pentest-pruner.mjs',
+];
+
 {
   const tool = name => `defineTool({name:"${name}",searchHint:"fixture",get inputSchema(){return{}},create(){return{}}})`;
   const source = `const read=${tool('Read')},write=${tool('Write')},edit=${tool('Edit')};` +
@@ -26,6 +31,28 @@ import { applyAstEdits } from './ast-patches.mjs';
   assert.equal(JSON.stringify(sandbox.__clawgodTables.tools[0]().map(tool => tool.name)), '["Read","Write","Edit"]');
   assert.equal(JSON.stringify(sandbox.__clawgodTables.commands[0]().map(command => command.name)), '["help","compact"]');
   assert.equal(scanPentestPatches(patched)['runtime-table-probe'].matches.length, 0, 'registration is idempotent');
+}
+
+{
+  const protectedGate = 'function protectedGate(){return requireConfirmation===true}';
+  const source = 'function classifier(tool){return tool.classifierOnly()}' +
+    'function warning(){const settings={unknownModelWindowWarning:"fixture"};return workspaceTrust===true}' +
+    'function shell(){return{behavior:"ask",decisionReason:{type:"safetyCheck",circuitBreaker:"dangerousRemoval",classifierApprovable:false}}}' +
+    protectedGate;
+  const start = source.indexOf(protectedGate);
+  const scanned = scanPentestPatches(source, [[start, start + protectedGate.length]]);
+  assert.equal(scanned['permission-classifier-off'].matches.length, 1);
+  assert.equal(scanned['security-warnings-off'].matches.length, 1);
+  assert.equal(scanned['permission-shell-pattern-off'].matches.length, 1);
+  assert.equal(scanned['permission-decisions-allow'].matches.length, 0,
+    'generic decision edits must not overlap a specific shell replacement');
+  assert.equal(scanned['permission-confirmations-off'].matches.length, 0,
+    'specific warning edits and upstream protected ranges take precedence over catch-all rules');
+  const patched = applyAstEdits(source, Object.values(scanned).flatMap(result => result.matches));
+  const result = runInNewContext(`${patched};[classifier({classifierOnly(){throw new Error("must not run")}}),warning(),protectedGate(),shell().behavior]`,
+    { workspaceTrust: false, requireConfirmation: false });
+  assert.deepEqual(Array.from(result), [undefined, false, false, 'passthrough']);
+  assert.ok(patched.includes(protectedGate));
 }
 
 assert.equal(floor('200000'), 200000);
@@ -62,7 +89,7 @@ const ultraplanFixtures = [
 ];
 const testDir = mkdtempSync(join(tmpdir(), 'clawgod-patch-test-'));
 try {
-  for (const name of ['patch.mjs', 'patch-registry.mjs', 'ast-patches.mjs', 'acorn.mjs', 'pentest-patches.mjs', 'pentest-scanners.mjs', 'pentest-trimming.mjs', 'pentest-policy-text.mjs', 'pentest-pruner.mjs']) {
+  for (const name of patchFiles) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(testDir, name));
   }
   writeFileSync(join(testDir, 'pathmap.json'), JSON.stringify(Object.fromEntries(
@@ -187,6 +214,82 @@ try {
 console.log('[patch.test] ultraplan bundle/graph compatibility and toggle semantics ok');
 console.log('[patch.test] auto-mode provider gate compatibility and toggle semantics ok');
 
+const promptDir = mkdtempSync(join(tmpdir(), 'clawgod-prompt-hook-test-'));
+try {
+  for (const name of patchFiles) {
+    copyFileSync(new URL(`./${name}`, import.meta.url), join(promptDir, name));
+  }
+  writeFileSync(join(promptDir, 'system-prompt.md'), 'Fixture role.\n');
+  writeFileSync(join(promptDir, 'pathmap.json'), JSON.stringify(Object.fromEntries(
+    ['assembly.js', 'legacy.js'].map(name => [`/$bunfs/root/${name}`, { path: `bunfs/${name}`, loader: 'js' }]),
+  )));
+  const central = 'function combine(defaultSystemPrompt,appendSystemPrompt,replaceSystemPrompt){' +
+    'const index=replaceSystemPrompt?defaultSystemPrompt.indexOf(replaceSystemPrompt):-1;' +
+    'if(index<0)return[...defaultSystemPrompt,...split(appendSystemPrompt)];' +
+    'return[...defaultSystemPrompt.slice(0,index),...split(appendSystemPrompt),...defaultSystemPrompt.slice(index+1)]}';
+  const legacy = 'function legacy({customSystemPrompt,appendSystemPrompt,defaultSystemPrompt}){' +
+    'return{prompt:defaultSystemPrompt,servesDefault:true}}';
+  const run = () => spawnSync(process.execPath, [join(promptDir, 'patch.mjs')], {
+    encoding: 'utf8', timeout: 30000,
+  });
+  for (const graph of [false, true]) {
+    if (graph) mkdirSync(join(promptDir, 'bunfs'));
+    const entry = join(promptDir, 'cli.original.cjs');
+    const target = graph ? join(promptDir, 'bunfs/assembly.js') : entry;
+    const fallback = graph ? join(promptDir, 'bunfs/legacy.js') : entry;
+    const paths = graph ? [entry, target, fallback] : [entry];
+    const readSources = () => Object.fromEntries(paths.map(path => [path, readFileSync(path, 'utf8')]));
+    for (const scenario of ['primary', 'fallback', 'missing']) {
+      const primarySource = scenario === 'primary' ? central :
+        scenario === 'missing' ? 'function userType(){return"external"}' : '';
+      const fallbackSource = scenario === 'missing' ? '' : legacy;
+      if (graph) {
+        writeFileSync(entry, '');
+        writeFileSync(target, primarySource);
+        writeFileSync(fallback, fallbackSource);
+      } else writeFileSync(entry, primarySource + '\n' + fallbackSource);
+      const before = readSources();
+      const result = run();
+      const label = `${graph ? 'graph' : 'bundle'}: ${scenario}`;
+      assert.ok(Number.isInteger(result.status), result.error?.message || label);
+      if (scenario === 'missing') {
+        assert.notEqual(result.status, 0, label);
+        assert.match(result.stdout, /required prompt injection hook did not match/);
+        assert.deepEqual(readSources(), before,
+          `${label}: a required hook failure must not partially write other patches`);
+        continue;
+      }
+      assert.equal(result.status, 0, `${label}: ${result.stderr}`);
+      const patched = readSources();
+      let injections = 0;
+      const functions = runInNewContext(`${patched[target]}\n${graph ? patched[fallback] : ''}\n` +
+        '({combine:typeof combine==="function"?combine:undefined,legacy})', {
+        split: value => value ? [value] : [],
+        __clawgodAssembly: {},
+        __clawgodHelpers: { rewritePromptAssembly: sections => {
+          injections++;
+          return ['Fixture injected.', ...sections];
+        } },
+      });
+      if (scenario === 'primary') {
+        assert.ok(patched[fallback].includes(legacy), `${label}: primary matching must suppress legacy fallback`);
+        assert.deepEqual(Array.from(functions.combine(['Header.'], 'Append.')), ['Fixture injected.', 'Header.', 'Append.']);
+        assert.deepEqual(Array.from(functions.legacy({ defaultSystemPrompt: ['Header.'] }).prompt), ['Header.']);
+      } else {
+        assert.deepEqual(Array.from(functions.legacy({ defaultSystemPrompt: ['Header.'] }).prompt), ['Fixture injected.', 'Header.']);
+        assert.match(result.stdout, /1 legacy-assembly/);
+      }
+      assert.equal(injections, 1, `${label}: inject exactly once at the selected assembly boundary`);
+      const repeated = run();
+      assert.equal(repeated.status, 0, repeated.stderr);
+      assert.deepEqual(readSources(), patched, `${label}: repatching is idempotent`);
+    }
+  }
+} finally {
+  rmSync(promptDir, { recursive: true, force: true });
+}
+console.log('[patch.test] pentest rules and prompt hooks ok');
+
 const privacyDir = mkdtempSync(join(tmpdir(), 'clawgod-wiggly-dove-test-'));
 const fixtures = [
   ['2.1.299', 'rw', 'mm'],
@@ -203,7 +306,7 @@ function privacyFixture(version, flag, check) {
     'async function buildRequest(){return{headers:{"x-unrelated":"preserved",...header(await collect())},body:{messages:[{role:"user",content:"hello"}]}}}';
 }
 try {
-  for (const name of ['patch.mjs', 'patch-registry.mjs', 'ast-patches.mjs', 'acorn.mjs', 'pentest-patches.mjs', 'pentest-scanners.mjs', 'pentest-trimming.mjs', 'pentest-policy-text.mjs', 'pentest-pruner.mjs']) {
+  for (const name of patchFiles) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(privacyDir, name));
   }
   writeFileSync(join(privacyDir, 'pathmap.json'), JSON.stringify({
