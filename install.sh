@@ -12660,7 +12660,7 @@ const upstreamPatches = [
     id: 'message-filter-s8',
     toggleable: true,
     name: 'Message list filter bypass (s_8 form)',
-    pattern: /if\(([\w$]+)\(\)==="ant"\)return ([\w$]+);let ([\w$]+)=([\w$]+) instanceof Set\?\4:(?:typeof \4==="function"\?\4\(\):)?([\w$]+)\(\4\);return ([\w$]+)\(\2,\3\)/g,
+    pattern: /if\(([\w$]+)\(\)==="ant"\)return ([\w$]+);(?:if\([\w$]+\(\)&&[\w$]+\(\)\.project\?\.currentSessionCodeMode===!0\)return \2;)?let ([\w$]+)=([\w$]+) instanceof Set\?\4:(?:typeof \4==="function"\?\4\(\):)?([\w$]+)\(\4\);return ([\w$]+)\(\2,\3\)/g,
     replacer: m => m.replace(/if\(([\w$]+)\(\)==="ant"\)/, (g, f) => `if(${gate('message-filter-s8')}||${f}()==="ant")`),
     optional: true,
   },
