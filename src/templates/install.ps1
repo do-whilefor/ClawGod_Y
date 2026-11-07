@@ -633,7 +633,7 @@ if ($normalizedClaudeExe.StartsWith($userProfilePrefix, [StringComparison]::Ordi
 
 $importBin = Join-Path $ClawDir "clawgod-import.exe"
 if (-not (Test-Path $importBin)) {
-    $importUrl = "https://github.com/do-whilefor/Clawgod_Y/releases/latest/download/clawgod-import-windows-x64.exe"
+    $importUrl = "https://github.com/7sen1ot/ClawGod_Y/releases/latest/download/clawgod-import-windows-x64.exe"
     try {
         Invoke-WebRequest -Uri $importUrl -OutFile $importBin -UseBasicParsing -ErrorAction Stop
         Write-OK "Provider import tool installed (clawgod-import.exe)"
@@ -643,7 +643,7 @@ if (-not (Test-Path $importBin)) {
 }
 
 $importPathInCmd = "%USERPROFILE%\.clawgod\clawgod-import.exe"
-$launcherContent = "@echo off`r`nif `"%~1`"==`"import`" (`r`n  if exist `"$importPathInCmd`" (`r`n    shift`r`n    `"$importPathInCmd`" %1 %2 %3 %4 %5 %6 %7 %8 %9`r`n    exit /b %ERRORLEVEL%`r`n  ) else (`r`n    echo clawgod: import tool not installed. Reinstall clawgod to get it.`r`n    exit /b 127`r`n  )`r`n)`r`nif not exist `"$cliPathInCmd`" (`r`n  echo clawgod: cli.cjs not found. Reinstall: irm https://github.com/do-whilefor/Clawgod_Y/releases/latest/download/install.ps1 ^| iex`r`n  exit /b 127`r`n)`r`nif not exist `"$bunPathInCmd`" (`r`n  echo clawgod: bun not found at $bunPathInCmd. Install: https://bun.sh/install`r`n  exit /b 127`r`n)`r`nset `"CLAUDE_CODE_EXECPATH=$claudeExeInCmd`"`r`nif not defined IS_SANDBOX set `"IS_SANDBOX=1`"`r`n`"$bunPathInCmd`" `"$cliPathInCmd`" %*"
+$launcherContent = "@echo off`r`nif `"%~1`"==`"import`" (`r`n  if exist `"$importPathInCmd`" (`r`n    shift`r`n    `"$importPathInCmd`" %1 %2 %3 %4 %5 %6 %7 %8 %9`r`n    exit /b %ERRORLEVEL%`r`n  ) else (`r`n    echo clawgod: import tool not installed. Reinstall clawgod to get it.`r`n    exit /b 127`r`n  )`r`n)`r`nif not exist `"$cliPathInCmd`" (`r`n  echo clawgod: cli.cjs not found. Reinstall: irm https://github.com/7sen1ot/ClawGod_Y/releases/latest/download/install.ps1 ^| iex`r`n  exit /b 127`r`n)`r`nif not exist `"$bunPathInCmd`" (`r`n  echo clawgod: bun not found at $bunPathInCmd. Install: https://bun.sh/install`r`n  exit /b 127`r`n)`r`nset `"CLAUDE_CODE_EXECPATH=$claudeExeInCmd`"`r`nif not defined IS_SANDBOX set `"IS_SANDBOX=1`"`r`n`"$bunPathInCmd`" `"$cliPathInCmd`" %*"
 
 $sourceLaunch = "`"$bunPathInCmd`" `"$cliPathInCmd`" %*"
 $compiledLaunch = @"
@@ -666,7 +666,7 @@ if ($selfPath -and (Test-Path $selfPath) -and
     Copy-Item -LiteralPath $selfPath -Destination (Join-Path $ClawDir "install.ps1.tmp") -Force -ErrorAction Stop
     Move-Item -LiteralPath (Join-Path $ClawDir "install.ps1.tmp") -Destination (Join-Path $ClawDir "install.ps1") -Force
 } elseif (-not $selfPath) {
-    $installerSource = Invoke-RestMethod "https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1"
+    $installerSource = Invoke-RestMethod "https://raw.githubusercontent.com/7sen1ot/ClawGod_Y/main/install.ps1"
     if ([string]::IsNullOrWhiteSpace($installerSource)) { throw 'Downloaded uninstaller is empty' }
     [System.IO.File]::WriteAllText((Join-Path $ClawDir "install.ps1.tmp"), $installerSource,
         (New-Object System.Text.UTF8Encoding $false))

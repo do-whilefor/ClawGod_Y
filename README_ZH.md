@@ -43,13 +43,13 @@ ClawGod_Y 是针对官方 [Claude Code](https://docs.anthropic.com/en/docs/claud
 **macOS / Linux / WSL：**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh | bash -s -- latest
+curl -fsSL https://raw.githubusercontent.com/7sen1ot/ClawGod_Y/main/install.sh | bash -s -- latest
 ```
 
 **Windows PowerShell：**
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1))) latest
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/7sen1ot/ClawGod_Y/main/install.ps1))) latest
 ```
 
 将示例中的 `latest` 替换为 `stable` 或具体版本号（如 `2.1.316`）即可。`latest` 和 `stable` 分别使用 npm 上对应标签的版本。

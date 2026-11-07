@@ -43,13 +43,13 @@ The patch implementation draws on [0Chencc/clawgod](https://github.com/0Chencc/c
 **macOS / Linux / WSL:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh | bash -s -- latest
+curl -fsSL https://raw.githubusercontent.com/7sen1ot/ClawGod_Y/main/install.sh | bash -s -- latest
 ```
 
 **Windows PowerShell:**
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.ps1))) latest
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/7sen1ot/ClawGod_Y/main/install.ps1))) latest
 ```
 
 Replace `latest` in the examples with `stable` or a specific version (such as `2.1.316`) as needed. `latest` and `stable` use the versions associated with the corresponding npm tags.

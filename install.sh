@@ -13357,7 +13357,7 @@ info "Tool and command tables load cleanly"
 
 IMPORT_BIN="$CLAWGOD_DIR/clawgod-import"
 if [ ! -x "$IMPORT_BIN" ]; then
-  IMPORT_URL="https://github.com/do-whilefor/Clawgod_Y/releases/latest/download/clawgod-import-$os-$arch"
+  IMPORT_URL="https://github.com/7sen1ot/ClawGod_Y/releases/latest/download/clawgod-import-$os-$arch"
   if curl -fsSL -o "$IMPORT_BIN" "$IMPORT_URL" 2>/dev/null; then
     chmod +x "$IMPORT_BIN"
     info "Provider import tool installed (clawgod-import)"
@@ -13383,7 +13383,7 @@ if [ \"\$1\" = \"import\" ]; then
 fi
 if [ ! -f \"\$CLAWGOD_CLI\" ]; then
   echo \"clawgod: installation at $CLAWGOD_DIR is missing (cli.cjs not found)\" >&2
-  echo \"clawgod: reinstall via  curl -fsSL https://github.com/do-whilefor/Clawgod_Y/releases/latest/download/install.sh | bash\" >&2
+  echo \"clawgod: reinstall via  curl -fsSL https://github.com/7sen1ot/ClawGod_Y/releases/latest/download/install.sh | bash\" >&2
   echo \"clawgod: or remove this launcher:  rm \\\"\$0\\\"\" >&2
   exit 127
 fi
@@ -13426,7 +13426,7 @@ if [ -f "$0" ] && [ "$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" != "$CLAWG
   cp "$0" "$CLAWGOD_DIR/install.sh.tmp"
   mv -f "$CLAWGOD_DIR/install.sh.tmp" "$CLAWGOD_DIR/install.sh"
 elif [ ! -f "$0" ]; then
-  curl -fsSL https://raw.githubusercontent.com/do-whilefor/Clawgod_Y/main/install.sh -o "$CLAWGOD_DIR/install.sh.tmp"
+  curl -fsSL https://raw.githubusercontent.com/7sen1ot/ClawGod_Y/main/install.sh -o "$CLAWGOD_DIR/install.sh.tmp"
   [ -s "$CLAWGOD_DIR/install.sh.tmp" ] || { err "Downloaded uninstaller is empty"; exit 1; }
   mv -f "$CLAWGOD_DIR/install.sh.tmp" "$CLAWGOD_DIR/install.sh"
 fi
