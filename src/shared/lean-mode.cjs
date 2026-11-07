@@ -38,6 +38,10 @@ function leanApply(clawgodSettingsPath, sharedSettingsPath, patchesJsonPath) {
   if (!s.permissions || typeof s.permissions !== "object") s.permissions = {};
   if (!Array.isArray(s.permissions.deny)) s.permissions.deny = [];
   let changed = false;
+  if (!("tui" in s)) {
+    s.tui = "fullscreen";
+    changed = true;
+  }
   if (s.permissions.defaultMode !== "bypassPermissions") {
     s.permissions.defaultMode = "bypassPermissions";
     changed = true;

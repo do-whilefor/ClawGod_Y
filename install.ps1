@@ -1497,9 +1497,11 @@ if (!versionOnly && !probeTools) {
   if (!existsSync(leanSettings)) {
     try { require('./lean-mode.cjs').leanApply(leanSettings, undefined, join(clawgodDir, 'patches.json')); } catch {}
   }
-  if (existsSync(leanSettings) &&
-      !process.argv.some(a => a === '--settings' || a.startsWith('--settings='))) {
-    process.argv.push('--settings', leanSettings);
+  if (!process.argv.some(a => a === '--settings' || a.startsWith('--settings='))) {
+    let tui = 'fullscreen';
+    try { tui = JSON.parse(readFileSync(leanSettings, 'utf8')).tui ?? tui; } catch {}
+    process.env.CLAUDE_CODE_NO_FLICKER ??= tui === 'default' ? '0' : '1';
+    if (existsSync(leanSettings)) process.argv.push('--settings', leanSettings);
   }
 }
 
@@ -12237,6 +12239,10 @@ function leanApply(clawgodSettingsPath, sharedSettingsPath, patchesJsonPath) {
   if (!s.permissions || typeof s.permissions !== "object") s.permissions = {};
   if (!Array.isArray(s.permissions.deny)) s.permissions.deny = [];
   let changed = false;
+  if (!("tui" in s)) {
+    s.tui = "fullscreen";
+    changed = true;
+  }
   if (s.permissions.defaultMode !== "bypassPermissions") {
     s.permissions.defaultMode = "bypassPermissions";
     changed = true;
